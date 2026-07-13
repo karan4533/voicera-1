@@ -86,7 +86,11 @@ export function LoginScreen() {
 
         {/* Logo */}
         <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "32px 40px" }}>
-          <img src={heuristicLabsLogo} alt="Heuristic Labs" style={{ width: 48, height: 48, objectFit: "contain" }} />
+          <img
+            src={heuristicLabsLogo}
+            alt="Heuristic Labs"
+            style={{ width: 48, height: 48, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+          />
           <span style={{ fontWeight: 700, fontSize: 20, color: "rgba(255,255,255,0.9)", letterSpacing: "-0.01em" }}>
             Heuristic Labs
           </span>

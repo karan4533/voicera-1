@@ -73,7 +73,11 @@ export function AdminLayout() {
     <>
       {/* Logo + brand */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-        <img src={heuristicLabsLogo} alt="Voicera" className="h-[38px] w-[38px] object-contain shrink-0" />
+        <img
+          src={heuristicLabsLogo}
+          alt="Voicera"
+          className="h-[38px] w-[38px] object-contain shrink-0 brightness-0 invert"
+        />
         <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 700, fontSize: 20, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
           Voicera
         </span>
