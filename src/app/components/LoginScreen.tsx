@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { getFriendlyAuthErrorMessage } from "../lib/authErrors";
 import heuristicLabsLogo from "../../assets/heuristic-labs-logo.png";
+import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
 // Helper to get post-login destination from a session role
 function roleHome(role?: string) {
@@ -87,9 +88,9 @@ export function LoginScreen() {
         {/* Logo */}
         <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "32px 40px" }}>
           <img
-            src={heuristicLabsLogo}
+            src={heuristicLabsLogoLight}
             alt="Heuristic Labs"
-            style={{ width: 48, height: 48, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+            style={{ width: 48, height: 48, objectFit: "contain" }}
           />
           <span style={{ fontWeight: 700, fontSize: 20, color: "rgba(255,255,255,0.9)", letterSpacing: "-0.01em" }}>
             Heuristic Labs

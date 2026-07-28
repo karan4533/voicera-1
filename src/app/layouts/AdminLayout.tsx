@@ -5,7 +5,7 @@ import {
   Activity, LogOut, X, Menu, Shield, HelpCircle, Bell,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import heuristicLabsLogo from "../../assets/heuristic-labs-logo.png";
+import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
 // ── Admin nav items ────────────────────────────────────────────────────────────
 
@@ -74,10 +74,9 @@ export function AdminLayout() {
       {/* Logo + brand */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-5">
         <img
-          src={heuristicLabsLogo}
+          src={heuristicLabsLogoLight}
           alt="Voicera"
           className="h-[38px] w-[38px] object-contain shrink-0"
-          style={{ filter: "brightness(0) invert(1)" }}
         />
         <span style={{ fontFamily: "Inter, sans-serif", fontWeight: 700, fontSize: 20, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
           Voicera
