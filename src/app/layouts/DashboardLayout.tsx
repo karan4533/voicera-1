@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import {
   Bot, LayoutDashboard, Sliders, BellRing, Phone,
-  Bell, Menu, X, LogOut, HelpCircle, Building2, CreditCard,
+  Menu, X, LogOut, HelpCircle, Building2, CreditCard,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { AgentSwitcher } from "../components/AgentSwitcher";
+import { NotificationBell } from "../components/NotificationBell";
 import { getSystemHealth } from "../lib/api";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
@@ -224,13 +225,7 @@ export function DashboardLayout() {
                   {health.activeCalls} Active
                 </span>
               </div>
-              <button
-                type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E2DDD5] bg-white cursor-pointer hover:border-[#C9B99E] transition-colors"
-                aria-label="Notifications"
-              >
-                <Bell size={15} className="text-[#7A746C]" />
-              </button>
+              <NotificationBell variant="customer" />
             </div>
           </div>
         </header>

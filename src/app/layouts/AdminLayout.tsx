@@ -2,9 +2,10 @@ import { useState, useCallback, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import {
   LayoutDashboard, Users, Package,
-  Activity, LogOut, X, Menu, Shield, HelpCircle, Bell, KeyRound,
+  Activity, LogOut, X, Menu, Shield, HelpCircle, KeyRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { NotificationBell } from "../components/NotificationBell";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
 // ── Admin nav items ────────────────────────────────────────────────────────────
@@ -207,14 +208,7 @@ export function AdminLayout() {
                 <div className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: "#4CAF50" }} />
                 <span className="text-[12px] font-semibold hidden sm:inline" style={{ color: "#6B645B" }}>All Systems Operational</span>
               </div>
-              <button
-                type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border cursor-pointer hover:bg-gray-50 transition-colors"
-                style={{ borderColor: "#E7DFC8", backgroundColor: "transparent" }}
-                aria-label="Notifications"
-              >
-                <Bell size={15} color="#6B645B" />
-              </button>
+              <NotificationBell variant="admin" />
             </div>
           </div>
         </header>
