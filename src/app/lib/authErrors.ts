@@ -72,6 +72,13 @@ export function getFriendlyAuthErrorMessage(err: unknown): string {
     case "auth/operation-not-allowed":
       return "Email and password sign-in is currently disabled. Please contact support.";
 
+    case "auth/multi-factor-auth-required":
+      return "Enter the 6-digit code from your authenticator app.";
+
+    case "auth/invalid-verification-code":
+    case "auth/invalid-verification-id":
+      return "That verification code is incorrect. Try again.";
+
     default:
       // Fallback logic
       if (err instanceof Error) {

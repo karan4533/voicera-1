@@ -8,8 +8,8 @@ import { fetchOrganizationsFromFirestore, type MockOrganisation } from "../../li
 import { AGENT_TYPES } from "../../context/AgentContext";
 import type { AgentType } from "../../lib/types";
 import { CreateAccountModal } from "./CreateAccountModal";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { adminUpdateOrganization } from "../../lib/adminApi";
+import { safeLog } from "../../lib/safeLog";
 
 // ── Agent checkbox in the assignment modal ─────────────────────────────────────
 
@@ -76,13 +76,11 @@ function AssignModal({
     setIsSaving(true);
     try {
       const agents = Array.from(selected);
-      await updateDoc(doc(db, "organizations", org.id), {
-        subscribedAgents: agents,
-      });
+      await adminUpdateOrganization({ orgId: org.id, subscribedAgents: agents });
       onSaved(org.id, agents);
     } catch (err) {
-      console.error("Failed to update subscriptions", err);
-      alert("Failed to save changes. Please check permissions.");
+      safeLog.error("Failed to update subscriptions", err);
+      alert("Failed to save changes. Deploy Cloud Functions if this persists.");
     } finally {
       setIsSaving(false);
     }
@@ -164,7 +162,7 @@ export function SubscriptionsPage() {
       live.sort((a, b) => a.name.localeCompare(b.name));
       setOrgs(live);
     } catch (err) {
-      console.error("Failed to load organizations", err);
+      safeLog.error("Failed to load organizations", err);
       setLoadError("Could not load organisations from Firestore. Check your connection and permissions.");
     } finally {
       setLoading(false);

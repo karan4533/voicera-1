@@ -22,6 +22,7 @@ import type { AgentType } from "./types";
 import type { IdTokenResult } from "firebase/auth";
 import { doc, getDoc, collection, getDocs, query, where, limit, Timestamp } from "firebase/firestore";
 import { db } from "./firebase";
+import { safeLog } from "./safeLog";
 
 // ── Platform Admin email list (MVP/demo seed) ─────────────────────────────────
 // Add / remove platform admin emails here. These are only used when Firebase
@@ -167,26 +168,54 @@ export function getSubscribedAgents(orgId: string | undefined): AgentType[] | un
 const VALID_PLANS = ["Starter", "Growth", "Enterprise"] as const;
 const VALID_STATUSES = ["active", "suspended", "trial"] as const;
 
+export interface OrgRecord {
+  subscribedAgents: AgentType[];
+  status: MockOrganisation["status"];
+  name?: string;
+  plan?: MockOrganisation["plan"];
+  totalCalls: number;
+  creditsLimit: number;
+}
+
+function parseOrgData(data: Record<string, unknown>, fallbackId?: string): OrgRecord {
+  const agents = data?.subscribedAgents;
+  const status = VALID_STATUSES.includes(data?.status as MockOrganisation["status"])
+    ? (data.status as MockOrganisation["status"])
+    : "active";
+  const plan = VALID_PLANS.includes(data?.plan as MockOrganisation["plan"])
+    ? (data.plan as MockOrganisation["plan"])
+    : "Starter";
+  const totalCalls = typeof data.totalCalls === "number" ? data.totalCalls : 0;
+  const creditsLimit =
+    typeof data.creditsLimit === "number"
+      ? data.creditsLimit
+      : plan === "Enterprise"
+        ? 100000
+        : plan === "Growth"
+          ? 20000
+          : 5000;
+  return {
+    subscribedAgents: Array.isArray(agents) ? [...new Set(agents as AgentType[])] : [],
+    status,
+    name: String(data.orgName ?? data.name ?? fallbackId ?? ""),
+    plan,
+    totalCalls,
+    creditsLimit,
+  };
+}
+
 /**
  * Reads organisation subscription + status from Firestore.
  */
 export async function getOrgFromFirestore(
   orgId: string
-): Promise<{ subscribedAgents: AgentType[]; status: MockOrganisation["status"] } | undefined> {
+): Promise<OrgRecord | undefined> {
   try {
     const snap = await getDoc(doc(db, "organizations", orgId));
     if (!snap.exists()) return undefined;
-    const data = snap.data();
-    const agents = data?.subscribedAgents;
-    const status = VALID_STATUSES.includes(data?.status) ? data.status : "active";
-    return {
-      subscribedAgents: Array.isArray(agents)
-        ? [...new Set(agents as AgentType[])]
-        : [],
-      status,
-    };
+    return parseOrgData(snap.data() as Record<string, unknown>, orgId);
   } catch (err) {
-    console.warn("[rbac] Firestore org fetch failed, using demo fallback", err);
+    safeLog.warn("Firestore org fetch failed, using demo fallback", err);
     return undefined;
   }
 }
@@ -194,7 +223,7 @@ export async function getOrgFromFirestore(
 /** Finds an org by customer login email (fallback when token orgId is stale). */
 export async function getOrgByEmailFromFirestore(
   email: string
-): Promise<{ orgId: string; subscribedAgents: AgentType[]; status: MockOrganisation["status"] } | undefined> {
+): Promise<(OrgRecord & { orgId: string }) | undefined> {
   try {
     const normalized = email.trim().toLowerCase();
     const snap = await getDocs(
@@ -202,18 +231,9 @@ export async function getOrgByEmailFromFirestore(
     );
     if (snap.empty) return undefined;
     const d = snap.docs[0];
-    const data = d.data();
-    const agents = data?.subscribedAgents;
-    const status = VALID_STATUSES.includes(data?.status) ? data.status : "active";
-    return {
-      orgId: d.id,
-      subscribedAgents: Array.isArray(agents)
-        ? [...new Set(agents as AgentType[])]
-        : [],
-      status,
-    };
+    return { orgId: d.id, ...parseOrgData(d.data() as Record<string, unknown>, d.id) };
   } catch (err) {
-    console.warn("[rbac] Firestore org-by-email fetch failed", err);
+    safeLog.warn("Firestore org-by-email fetch failed", err);
     return undefined;
   }
 }
@@ -261,6 +281,7 @@ export async function fetchOrganizationsFromFirestore(): Promise<MockOrganisatio
         ? [...new Set(data.subscribedAgents as AgentType[])]
         : [],
       totalCalls: typeof data.totalCalls === "number" ? data.totalCalls : 0,
+      creditsLimit: typeof data.creditsLimit === "number" ? data.creditsLimit : undefined,
       createdAt: formatOrgCreatedAt(data.createdAt),
       contactName: (data.contactName ?? "") as string,
     };
@@ -277,6 +298,7 @@ export interface MockOrganisation {
   status: "active" | "suspended" | "trial";
   subscribedAgents: AgentType[];
   totalCalls: number;
+  creditsLimit?: number;
   createdAt: string;
   contactName: string;
 }

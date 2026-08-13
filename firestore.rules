@@ -7,6 +7,9 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Production: prefer custom claim role == platform_admin.
+    // Email allowlist is a temporary bootstrap for Heuristic Labs admins
+    // until all admin accounts have claims set via Admin SDK.
     function isPlatformAdmin() {
       return isSignedIn() && (
         request.auth.token.role == 'platform_admin' ||
@@ -17,18 +20,29 @@ service cloud.firestore {
     function isOrgMember(orgId) {
       return isSignedIn() && (
         request.auth.token.orgId == orgId ||
-        resource.data.ownerUid == request.auth.uid ||
-        resource.data.email == request.auth.token.email
+        (resource != null && resource.data.ownerUid == request.auth.uid) ||
+        (resource != null && resource.data.email == request.auth.token.email)
       );
     }
 
+    // Tenant isolation (maps to brief: RLS / ownership checks).
+    // - Platform admins: full read/write for console management
+    // - Customers: read only their own org (subscriptions, status)
+    // - No authenticated user may create/update another tenant's org from the client
     match /organizations/{orgId} {
-      // Signed-in users can read (admin lists all orgs; customers read own org).
-      allow read: if isSignedIn();
-      // MVP: any signed-in admin-console user can provision orgs.
-      // Tighten to isPlatformAdmin() before production.
-      allow create, update: if isSignedIn();
-      allow delete: if isPlatformAdmin();
+      allow get: if isPlatformAdmin() || isOrgMember(orgId);
+      allow list: if isPlatformAdmin();
+      allow create, update, delete: if isPlatformAdmin();
     }
+
+    // Audit trail — writes only via Admin SDK (Cloud Functions).
+    match /audit_events/{eventId} {
+      allow get, list: if isPlatformAdmin() || (
+        isSignedIn() && resource.data.orgId == request.auth.token.orgId
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Default deny — all other collections are blocked unless explicitly opened.
   }
 }

@@ -19,6 +19,8 @@ import { CustomerAccountsPage } from "./pages/admin/CustomerAccountsPage";
 import { SubscriptionsPage } from "./pages/admin/SubscriptionsPage";
 import { PlatformAnalyticsPage } from "./pages/admin/PlatformAnalyticsPage";
 import { SystemHealthPage } from "./pages/admin/SystemHealthPage";
+import { SecurityPage } from "./pages/admin/SecurityPage";
+import { UsagePage } from "./pages/UsagePage";
 
 import { useAuth } from "./context/AuthContext";
 
@@ -63,6 +65,7 @@ export default function App() {
               <Route path="subscriptions" element={<SubscriptionsPage />} />
               <Route path="analytics"   element={<PlatformAnalyticsPage />} />
               <Route path="system-health" element={<SystemHealthPage />} />
+              <Route path="security"    element={<SecurityPage />} />
             </Route>
 
             {/* ── Customer Workspace ───────────────────────────────────────── */}
@@ -79,10 +82,25 @@ export default function App() {
 
               {/* Agent management & configuration */}
               <Route path="agents"   element={<AgentsPage />} />
-              <Route path="customize" element={<CustomizePage />} />
+              <Route
+                path="customize"
+                element={
+                  <RoleRoute allowedRoles={["customer_admin"]}>
+                    <CustomizePage />
+                  </RoleRoute>
+                }
+              />
+              <Route path="usage" element={<UsagePage />} />
 
-              {/* Call management */}
-              <Route path="call-reminders" element={<CallRemindersPage />} />
+              {/* Call management — customer_user is view-only */}
+              <Route
+                path="call-reminders"
+                element={
+                  <RoleRoute allowedRoles={["customer_admin"]}>
+                    <CallRemindersPage />
+                  </RoleRoute>
+                }
+              />
               <Route path="live-calls"     element={<LiveCallsPage />} />
 
               {/* Legacy redirects — keep old URLs working */}

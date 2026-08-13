@@ -3,17 +3,14 @@ import {
   UserPlus, Check, AlertCircle, Building2, Mail, EyeOff, Eye, Package,
   CheckCircle2, Copy, Send, X
 } from "lucide-react";
-import { type MockOrganisation, orgIdFromOwnerUid } from "../../lib/rbac";
+import { type MockOrganisation } from "../../lib/rbac";
 import { AGENT_TYPES } from "../../context/AgentContext";
 import type { AgentType } from "../../lib/types";
-import { app, db, functions } from "../../lib/firebase";
-import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { functions } from "../../lib/firebase";
 import { httpsCallable } from "firebase/functions";
-import {
-  doc, setDoc, updateDoc,
-  serverTimestamp, collection, query, where, getDocs, limit,
-} from "firebase/firestore";
+import { isValidEmail, sanitizePlainText, passwordMeetsPolicy } from "../../lib/validate";
+import { allowAttempt } from "../../lib/rateLimit";
+import { safeLog } from "../../lib/safeLog";
 
 type CreateStep = "form" | "agents" | "confirm" | "success";
 
@@ -44,62 +41,25 @@ export function CreateAccountModal({ onClose }: { onClose: () => void }) {
 
   const validateForm = () => {
     const e: Record<string, string> = {};
-    if (!orgName.trim())    e.orgName = "Organisation name is required";
-    if (!contactName.trim()) e.contactName = "Contact name is required";
-    if (!email.trim())      e.email = "Email is required";
-    if (!email.includes("@")) e.email = "Enter a valid email address";
-    if (password.length < 8) e.password = "Password must be at least 8 characters";
+    const name = sanitizePlainText(orgName, 120);
+    const contact = sanitizePlainText(contactName, 80);
+    setOrgName(name);
+    setContactName(contact);
+    if (!name) e.orgName = "Organisation name is required";
+    if (!contact) e.contactName = "Contact name is required";
+    if (!email.trim()) e.email = "Email is required";
+    else if (!isValidEmail(email)) e.email = "Enter a valid email address";
+    if (!passwordMeetsPolicy(password)) {
+      e.password = "Password must be at least 12 characters and include a letter and a number";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
-  };
-
-  const saveOrganization = async (
-    orgId: string,
-    agents: AgentType[],
-    ownerUid?: string,
-  ) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const orgRef = doc(db, "organizations", orgId);
-    const baseFields = {
-      orgName,
-      contactName,
-      email: normalizedEmail,
-      plan,
-      status: "active" as const,
-      subscribedAgents: agents,
-      ...(ownerUid ? { ownerUid } : {}),
-    };
-
-    try {
-      await updateDoc(orgRef, baseFields);
-    } catch (err: unknown) {
-      const fsErr = err as { code?: string };
-      if (fsErr.code !== "not-found") throw err;
-      await setDoc(orgRef, {
-        ...baseFields,
-        totalCalls: 0,
-        createdAt: serverTimestamp(),
-        ownerUid: ownerUid ?? "",
-      });
-    }
-  };
-
-  const resolveOrgIdForExistingEmail = async (normalizedEmail: string): Promise<string> => {
-    const snap = await getDocs(
-      query(
-        collection(db, "organizations"),
-        where("email", "==", normalizedEmail),
-        limit(1),
-      ),
-    );
-    if (!snap.empty) return snap.docs[0].id;
-    throw new Error("No organisation found for this email.");
   };
 
   const createViaCloudFunction = async (agents: AgentType[]) => {
     const createCustomerAccount = httpsCallable(functions, "createCustomerAccount");
     const result = await createCustomerAccount({
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       password,
       orgName,
       contactName,
@@ -110,67 +70,32 @@ export function CreateAccountModal({ onClose }: { onClose: () => void }) {
     setWasExistingAccount(!!data.existingUser);
   };
 
-  const createViaClient = async (agents: AgentType[]) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    let secondaryApp: FirebaseApp | null = null;
-
-    try {
-      secondaryApp = initializeApp(app.options, "SecondaryApp" + Date.now());
-      const secondaryAuth = getAuth(secondaryApp);
-      const userCred = await createUserWithEmailAndPassword(
-        secondaryAuth, normalizedEmail, password,
-      );
-      await secondaryAuth.signOut();
-      const orgId = orgIdFromOwnerUid(userCred.user.uid);
-      await saveOrganization(orgId, agents, userCred.user.uid);
-      setWasExistingAccount(false);
-    } catch (err: unknown) {
-      const authErr = err as { code?: string };
-      if (authErr.code === "auth/email-already-in-use") {
-        const orgId = await resolveOrgIdForExistingEmail(normalizedEmail);
-        await saveOrganization(orgId, agents);
-        setWasExistingAccount(true);
-        return;
-      }
-      throw err;
-    } finally {
-      if (secondaryApp) await deleteApp(secondaryApp).catch(() => {});
-    }
-  };
-
   const handleCreateAccount = async () => {
     setCreationError(null);
+    if (!allowAttempt(`create-account:${email.trim().toLowerCase()}`, 3, 60_000)) {
+      setCreationError("Please wait a minute before trying again.");
+      return;
+    }
     setIsCreating(true);
     try {
-      const agents = Array.from(selectedAgents);
-
-      try {
-        await createViaCloudFunction(agents);
-      } catch (cloudErr) {
-        console.warn("Cloud function unavailable, falling back to client creation:", cloudErr);
-        await createViaClient(agents);
-      }
-
+      // Production: Cloud Function only — never create Auth users or write orgs from the browser.
+      await createViaCloudFunction(Array.from(selectedAgents));
       setStep("success");
     } catch (err: unknown) {
-      console.error("Account creation failed:", err);
+      safeLog.error("Account creation failed", err);
       const fbErr = err as { code?: string; message?: string };
-      if (fbErr.code === "auth/email-already-in-use") {
-        setCreationError(
-          "This email is already registered. The subscription could not be updated — try Manage Agent Access on the Subscriptions page.",
-        );
-      } else if (fbErr.code === "permission-denied") {
-        setCreationError(
-          "Firestore permission denied. In Firebase Console → Firestore → Rules, publish the rules from firestore.rules in this repo (or allow authenticated writes to organizations).",
-        );
+      if (fbErr.code === "functions/unauthenticated") {
+        setCreationError("You must be signed in as a Platform Admin.");
+      } else if (fbErr.code === "functions/permission-denied") {
+        setCreationError("Only Platform Admins can create customer accounts.");
+      } else if (fbErr.code === "functions/invalid-argument") {
+        setCreationError(fbErr.message || "Invalid account details.");
+      } else if (fbErr.code === "functions/already-exists") {
+        setCreationError("This email already has an account. Use Manage Agent Access to update agents.");
       } else if (fbErr.code === "unavailable" || fbErr.message?.includes("offline")) {
-        setCreationError(
-          "Cannot reach Firestore. Check your internet connection, disable VPN/ad blockers, and confirm Firestore is enabled in Firebase Console → Build → Firestore Database.",
-        );
-      } else if (fbErr.code === "functions/aborted" && fbErr.message) {
-        setCreationError(fbErr.message);
+        setCreationError("Cannot reach Firebase. Check your connection and try again.");
       } else {
-        setCreationError(fbErr.message || "Failed to create account.");
+        setCreationError("Failed to create account. Please try again or contact support.");
       }
     } finally {
       setIsCreating(false);
@@ -329,7 +254,7 @@ The Voicera Team`
                   <input
                     type={showPass ? "text" : "password"} value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min. 8 characters"
+                    placeholder="Min. 12 characters"
                     className="w-full h-10 px-3 pr-10 text-[13px] border rounded-lg focus:outline-none focus:ring-2 transition-colors"
                     style={{ borderColor: errors.password ? "#D9534F" : "#E7DFC8", outlineColor: "#50381F" }}
                   />

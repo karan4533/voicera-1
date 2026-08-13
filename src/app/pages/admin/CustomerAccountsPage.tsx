@@ -9,8 +9,8 @@ import { fetchOrganizationsFromFirestore, type MockOrganisation } from "../../li
 import { AGENT_TYPES } from "../../context/AgentContext";
 import type { AgentType } from "../../lib/types";
 import { CreateAccountModal } from "./CreateAccountModal";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { adminUpdateOrganization, offboardCustomer } from "../../lib/adminApi";
+import { safeLog } from "../../lib/safeLog";
 
 function StatusBadge({ status }: { status: MockOrganisation["status"] }) {
   switch (status) {
@@ -62,12 +62,13 @@ function AgentPill({ agentId }: { agentId: AgentType }) {
 }
 
 function OrgDrawer({
-  org, onClose, onManageSubscriptions, onToggleSuspend, isUpdating,
+  org, onClose, onManageSubscriptions, onToggleSuspend, onOffboard, isUpdating,
 }: {
   org: MockOrganisation;
   onClose: () => void;
   onManageSubscriptions: (org: MockOrganisation) => void;
   onToggleSuspend: (org: MockOrganisation) => void;
+  onOffboard: (org: MockOrganisation) => void;
   isUpdating: boolean;
 }) {
   return (
@@ -170,6 +171,14 @@ function OrgDrawer({
         >
           {isUpdating ? "Updating..." : org.status === "suspended" ? "Reactivate Account" : "Suspend Account"}
         </button>
+        <button
+          onClick={() => onOffboard(org)}
+          disabled={isUpdating}
+          className="w-full h-10 rounded-lg text-[13px] font-bold cursor-pointer border transition-colors disabled:opacity-50"
+          style={{ borderColor: "#D9534F", backgroundColor: "#FFFFFF", color: "#D9534F" }}
+        >
+          Offboard / delete account
+        </button>
       </div>
     </div>
   );
@@ -195,7 +204,7 @@ export function CustomerAccountsPage() {
       setOrgs(live);
       setSelectedOrg((prev) => prev ? live.find((o) => o.id === prev.id) ?? null : null);
     } catch (err) {
-      console.error("Failed to load organizations", err);
+      safeLog.error("Failed to load organizations", err);
       setLoadError("Could not load organisations from Firestore.");
     } finally {
       setLoading(false);
@@ -226,12 +235,28 @@ export function CustomerAccountsPage() {
 
     setIsUpdating(true);
     try {
-      await updateDoc(doc(db, "organizations", org.id), { status: nextStatus });
+      await adminUpdateOrganization({ orgId: org.id, status: nextStatus });
       setOrgs((prev) => prev.map((o) => o.id === org.id ? { ...o, status: nextStatus } : o));
       setSelectedOrg((prev) => prev?.id === org.id ? { ...prev, status: nextStatus } : prev);
     } catch (err) {
-      console.error("Failed to update account status", err);
-      alert("Failed to update account status. Check Firestore permissions.");
+      safeLog.error("Failed to update account status", err);
+      alert("Failed to update account status. Deploy Cloud Functions if this persists.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleOffboard = async (org: MockOrganisation) => {
+    const confirmMsg = `Permanently offboard ${org.name}? This deletes their login and organisation record. This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    setIsUpdating(true);
+    try {
+      await offboardCustomer(org.id);
+      setOrgs((prev) => prev.filter((o) => o.id !== org.id));
+      setSelectedOrg(null);
+    } catch (err) {
+      safeLog.error("Failed to offboard customer", err);
+      alert("Failed to offboard this account. Deploy Cloud Functions if this persists.");
     } finally {
       setIsUpdating(false);
     }
@@ -416,6 +441,7 @@ export function CustomerAccountsPage() {
           onClose={() => setSelectedOrg(null)}
           onManageSubscriptions={handleManageSubscriptions}
           onToggleSuspend={handleToggleSuspend}
+          onOffboard={handleOffboard}
           isUpdating={isUpdating}
         />
       )}

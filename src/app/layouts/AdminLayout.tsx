@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import {
   LayoutDashboard, Users, Package,
-  Activity, LogOut, X, Menu, Shield, HelpCircle, Bell,
+  Activity, LogOut, X, Menu, Shield, HelpCircle, Bell, KeyRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
@@ -14,6 +14,7 @@ const adminNavItems = [
   { icon: Users,           label: "Customer Accounts",  path: "/admin/customers" },
   { icon: Package,         label: "Subscriptions",      path: "/admin/subscriptions" },
   { icon: Activity,        label: "System Health",      path: "/admin/system-health" },
+  { icon: KeyRound,        label: "Security",           path: "/admin/security" },
 ];
 
 // ── NavItem ────────────────────────────────────────────────────────────────────

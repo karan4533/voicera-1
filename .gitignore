@@ -4,9 +4,10 @@ node_modules/
 # Build output
 dist/
 
-# Local env — NEVER commit this
-.env.local
-.env.*.local
+# Environment — NEVER commit secrets (production requirement)
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/
@@ -25,3 +26,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Service account keys / credentials
+*-firebase-adminsdk-*.json
+*serviceAccount*.json
+credentials.json

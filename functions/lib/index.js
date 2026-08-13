@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createCustomerAccount = void 0;
+exports.offboardCustomer = exports.adminUpdateOrganization = exports.revokeMySessions = exports.recordAuditEvent = exports.createCustomerAccount = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -43,23 +43,54 @@ const PLATFORM_ADMIN_EMAILS = [
     "platform@heuristiclabs.ai",
     "admin@heuristiclabs.ai",
 ];
-function assertPlatformAdmin(context) {
-    if (!context.auth) {
-        throw new functions.https.HttpsError("unauthenticated", "The function must be called while authenticated.");
-    }
+const PLAN_CREDITS = {
+    Starter: 5000,
+    Growth: 20000,
+    Enterprise: 100000,
+};
+const AUDIT_ACTIONS = new Set([
+    "login",
+    "logout",
+    "create_account",
+    "update_account",
+    "suspend_account",
+    "reactivate_account",
+    "update_agents",
+    "offboard_account",
+    "revoke_sessions",
+    "mfa_enroll",
+    "view_usage",
+]);
+function isPlatformAdminToken(context) {
+    if (!context.auth)
+        return false;
     const role = context.auth.token.role;
     const email = (context.auth.token.email || "").toLowerCase();
-    const isAdmin = role === "platform_admin" || PLATFORM_ADMIN_EMAILS.includes(email);
-    if (!isAdmin) {
-        throw new functions.https.HttpsError("permission-denied", "Only Platform Admins can create customer accounts.");
+    return role === "platform_admin" || PLATFORM_ADMIN_EMAILS.includes(email);
+}
+function assertAuthenticated(context) {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Sign in required.");
     }
 }
-/**
- * createCustomerAccount
- *
- * Secure callable — creates/updates a customer tenant.
- * Requires authenticated platform_admin (claim or bootstrap email list).
- */
+function assertPlatformAdmin(context) {
+    assertAuthenticated(context);
+    if (!isPlatformAdminToken(context)) {
+        throw new functions.https.HttpsError("permission-denied", "Only Platform Admins can perform this action.");
+    }
+}
+async function writeAudit(entry) {
+    await admin.firestore().collection("audit_events").add({
+        action: entry.action,
+        actorUid: entry.actorUid,
+        actorEmail: entry.actorEmail,
+        actorRole: entry.actorRole || "",
+        orgId: entry.orgId || "",
+        targetEmail: entry.targetEmail || "",
+        detail: (entry.detail || "").slice(0, 300),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+}
 exports.createCustomerAccount = functions.https.onCall(async (data, context) => {
     assertPlatformAdmin(context);
     const { email, password, orgName, contactName, plan, agents, resetPassword } = data;
@@ -71,8 +102,8 @@ exports.createCustomerAccount = functions.https.onCall(async (data, context) => 
     }
     const normalizedEmail = String(email).trim().toLowerCase();
     const agentList = Array.isArray(agents) ? agents : [];
-    // Existing accounts: only reset password when explicitly requested (default false).
     const shouldResetPassword = resetPassword === true;
+    const planName = plan || "Starter";
     try {
         let userRecord;
         let existingUser = false;
@@ -112,10 +143,11 @@ exports.createCustomerAccount = functions.https.onCall(async (data, context) => 
             orgName,
             contactName: contactName || "",
             email: normalizedEmail,
-            plan: plan || "Starter",
+            plan: planName,
             status: "active",
             ownerUid: userRecord.uid,
             subscribedAgents: agentList,
+            creditsLimit: PLAN_CREDITS[planName] ?? PLAN_CREDITS.Starter,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
         if (!byEmail.empty) {
@@ -132,6 +164,15 @@ exports.createCustomerAccount = functions.https.onCall(async (data, context) => 
             role: "customer_admin",
             orgId,
         });
+        await writeAudit({
+            action: existingUser ? "update_account" : "create_account",
+            actorUid: context.auth.uid,
+            actorEmail: context.auth.token.email || "",
+            actorRole: "platform_admin",
+            orgId,
+            targetEmail: normalizedEmail,
+            detail: `${orgName} · ${agentList.length} agent(s)`,
+        });
         return {
             success: true,
             existingUser,
@@ -143,10 +184,117 @@ exports.createCustomerAccount = functions.https.onCall(async (data, context) => 
         };
     }
     catch (error) {
-        console.error("Error creating customer account:", error?.code || error?.message || error);
+        console.error("createCustomerAccount:", error?.code || "error");
         if (error instanceof functions.https.HttpsError)
             throw error;
         throw new functions.https.HttpsError("internal", "Unable to create customer account.");
     }
+});
+exports.recordAuditEvent = functions.https.onCall(async (data, context) => {
+    assertAuthenticated(context);
+    const action = String(data?.action || "");
+    if (!AUDIT_ACTIONS.has(action)) {
+        throw new functions.https.HttpsError("invalid-argument", "Unknown audit action.");
+    }
+    const isAdmin = isPlatformAdminToken(context);
+    const tokenOrg = context.auth.token.orgId || "";
+    const orgId = isAdmin ? String(data?.orgId || tokenOrg || "") : tokenOrg;
+    await writeAudit({
+        action,
+        actorUid: context.auth.uid,
+        actorEmail: context.auth.token.email || "",
+        actorRole: isAdmin ? "platform_admin" : String(context.auth.token.role || "customer_admin"),
+        orgId,
+        targetEmail: isAdmin ? String(data?.targetEmail || "") : "",
+        detail: String(data?.detail || "").slice(0, 300),
+    });
+    return { ok: true };
+});
+exports.revokeMySessions = functions.https.onCall(async (_data, context) => {
+    assertAuthenticated(context);
+    await admin.auth().revokeRefreshTokens(context.auth.uid);
+    await writeAudit({
+        action: "revoke_sessions",
+        actorUid: context.auth.uid,
+        actorEmail: context.auth.token.email || "",
+        actorRole: String(context.auth.token.role || ""),
+        orgId: String(context.auth.token.orgId || ""),
+        detail: "Refresh tokens revoked",
+    });
+    return { ok: true };
+});
+exports.adminUpdateOrganization = functions.https.onCall(async (data, context) => {
+    assertPlatformAdmin(context);
+    const orgId = String(data?.orgId || "");
+    if (!orgId) {
+        throw new functions.https.HttpsError("invalid-argument", "orgId is required.");
+    }
+    const updates = {
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    let action = "update_account";
+    if (data.status === "active" || data.status === "suspended" || data.status === "trial") {
+        updates.status = data.status;
+        action = data.status === "suspended" ? "suspend_account" : "reactivate_account";
+    }
+    if (Array.isArray(data.subscribedAgents)) {
+        updates.subscribedAgents = data.subscribedAgents;
+        action = "update_agents";
+    }
+    const ref = admin.firestore().collection("organizations").doc(orgId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+        throw new functions.https.HttpsError("not-found", "Organisation not found.");
+    }
+    await ref.update(updates);
+    await writeAudit({
+        action,
+        actorUid: context.auth.uid,
+        actorEmail: context.auth.token.email || "",
+        actorRole: "platform_admin",
+        orgId,
+        targetEmail: snap.data()?.email || "",
+        detail: action === "update_agents"
+            ? `${data.subscribedAgents.length} agent(s)`
+            : String(data.status || ""),
+    });
+    return { ok: true };
+});
+exports.offboardCustomer = functions.https.onCall(async (data, context) => {
+    assertPlatformAdmin(context);
+    const orgId = String(data?.orgId || "");
+    if (!orgId) {
+        throw new functions.https.HttpsError("invalid-argument", "orgId is required.");
+    }
+    const ref = admin.firestore().collection("organizations").doc(orgId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+        throw new functions.https.HttpsError("not-found", "Organisation not found.");
+    }
+    const org = snap.data() || {};
+    const ownerUid = org.ownerUid;
+    const email = org.email || "";
+    if (ownerUid) {
+        try {
+            await admin.auth().deleteUser(ownerUid);
+        }
+        catch (err) {
+            if (err?.code !== "auth/user-not-found") {
+                console.error("offboard deleteUser:", err?.code || "error");
+                throw new functions.https.HttpsError("internal", "Unable to delete customer login.");
+            }
+        }
+    }
+    await ref.delete();
+    await writeAudit({
+        action: "offboard_account",
+        actorUid: context.auth.uid,
+        actorEmail: context.auth.token.email || "",
+        actorRole: "platform_admin",
+        orgId,
+        targetEmail: email,
+        detail: `Deleted ${org.orgName || orgId}`,
+    });
+    return { ok: true };
 });
 //# sourceMappingURL=index.js.map

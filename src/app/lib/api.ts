@@ -17,6 +17,7 @@
 import * as mock from "./mock-api";
 import { getSession } from "./auth";
 import { parseCsv } from "./csv";
+import { safeLog } from "./safeLog";
 import type {
   ActiveCall,
   CompletedCall,
@@ -39,7 +40,15 @@ import type {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const isProd = import.meta.env.PROD;
+const USE_MOCK =
+  import.meta.env.VITE_USE_MOCK === "true"
+    ? !isProd // never allow mock in production builds
+    : import.meta.env.VITE_USE_MOCK !== "false" && !isProd;
+
+if (isProd && import.meta.env.VITE_USE_MOCK === "true") {
+  safeLog.warn("VITE_USE_MOCK=true is ignored in production builds.");
+}
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) ?? "http://localhost:8000";
 
 /**

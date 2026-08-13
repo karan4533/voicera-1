@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import {
   Bot, LayoutDashboard, Sliders, BellRing, Phone,
-  Bell, Menu, X, LogOut, HelpCircle, Building2,
+  Bell, Menu, X, LogOut, HelpCircle, Building2, CreditCard,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { AgentSwitcher } from "../components/AgentSwitcher";
@@ -11,12 +11,13 @@ import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
 // ── Sidebar nav items ──────────────────────────────────────────────────────────
 
-const navItems = [
-  { icon: Bot,           label: "Agents",               path: "/dashboard/agents" },
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Sliders,       label: "Customize Agent",   path: "/dashboard/customize" },
-  { icon: BellRing,      label: "Call Scheduler",       path: "/dashboard/call-reminders" },
-  { icon: Phone,         label: "Live Calls",           path: "/dashboard/live-calls" },
+const allNavItems = [
+  { icon: Bot,             label: "Agents",           path: "/dashboard/agents",          adminOnly: false },
+  { icon: LayoutDashboard, label: "Dashboard",        path: "/dashboard",                 adminOnly: false },
+  { icon: Sliders,         label: "Customize Agent",  path: "/dashboard/customize",       adminOnly: true },
+  { icon: BellRing,        label: "Call Scheduler",   path: "/dashboard/call-reminders",  adminOnly: true },
+  { icon: Phone,           label: "Live Calls",       path: "/dashboard/live-calls",      adminOnly: false },
+  { icon: CreditCard,      label: "Usage & credits",  path: "/dashboard/usage",           adminOnly: false },
 ];
 
 // ── NavItem ────────────────────────────────────────────────────────────────────
@@ -109,7 +110,9 @@ export function DashboardLayout() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5">
-        {navItems.map(({ icon, label, path }) => (
+        {allNavItems
+          .filter((item) => session?.user.role !== "customer_user" || !item.adminOnly)
+          .map(({ icon, label, path }) => (
           <NavItem
             key={path}
             icon={icon}

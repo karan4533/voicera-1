@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Eye, EyeOff, Shield, Mail } from "lucide-react";
 import { useNavigate } from "react-router";
-import { useAuth } from "../context/AuthContext";
+import type { MultiFactorResolver } from "firebase/auth";
+import { useAuth, isMfaRequiredError } from "../context/AuthContext";
 import { getFriendlyAuthErrorMessage } from "../lib/authErrors";
+import { isValidEmail } from "../lib/validate";
+import { allowAttempt } from "../lib/rateLimit";
 import heuristicLabsLogo from "../../assets/heuristic-labs-logo.png";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
@@ -24,27 +27,67 @@ const BORDER   = "#D6CFC4";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
-  const { login, resetPassword, session } = useAuth();
+  const { login, completeMfaLogin, resetPassword, session } = useAuth();
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState<"login" | "forgot" | "forgot-success">("login");
+  const [mode, setMode] = useState<"login" | "forgot" | "forgot-success" | "mfa">("login");
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState(() => localStorage.getItem("remembered_email") || "");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem("remembered_email"));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const rememberEmail = (value: string) => {
+    if (rememberMe) localStorage.setItem("remembered_email", value);
+    else localStorage.removeItem("remembered_email");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!email.trim()) { setError("Email is required."); return; }
-    if (!password)     { setError("Password is required."); return; }
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) { setError("Email is required."); return; }
+    if (!isValidEmail(trimmed)) { setError("Please enter a valid email address."); return; }
+    if (!password) { setError("Password is required."); return; }
+    if (!allowAttempt(`login:${trimmed}`, 5, 60_000)) {
+      setError("Too many attempts. Please wait a minute and try again.");
+      return;
+    }
     setLoading(true);
     try {
-      await login(email.trim(), password, rememberMe);
-      if (rememberMe) localStorage.setItem("remembered_email", email.trim());
-      else localStorage.removeItem("remembered_email");
+      await login(trimmed, password, rememberMe);
+      rememberEmail(trimmed);
+      navigate(roleHome(session?.user.role), { replace: true });
+    } catch (err) {
+      if (isMfaRequiredError(err)) {
+        setMfaResolver(err.resolver);
+        setMfaCode("");
+        setMode("mfa");
+        setError("");
+      } else {
+        setError(getFriendlyAuthErrorMessage(err));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!mfaResolver) { setMode("login"); return; }
+    if (mfaCode.trim().length < 6) { setError("Enter the 6-digit authenticator code."); return; }
+    if (!allowAttempt(`mfa:${email.trim().toLowerCase()}`, 5, 60_000)) {
+      setError("Too many attempts. Please wait a minute and try again.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await completeMfaLogin(mfaResolver, mfaCode);
+      rememberEmail(email.trim().toLowerCase());
       navigate(roleHome(session?.user.role), { replace: true });
     } catch (err) {
       setError(getFriendlyAuthErrorMessage(err));
@@ -57,6 +100,11 @@ export function LoginScreen() {
     e.preventDefault();
     setError("");
     if (!email.trim()) { setError("Email is required."); return; }
+    if (!isValidEmail(email.trim())) { setError("Please enter a valid email address."); return; }
+    if (!allowAttempt(`reset:${email.trim().toLowerCase()}`, 3, 60_000)) {
+      setError("Too many reset requests. Please wait a minute.");
+      return;
+    }
     setLoading(true);
     try {
       await resetPassword(email.trim());
@@ -139,7 +187,50 @@ export function LoginScreen() {
         <div style={{ width: "100%", maxWidth: 400, backgroundColor: SURFACE, borderRadius: 16, border: `1px solid ${BORDER}`, padding: "36px 36px", boxShadow: "0 4px 24px rgba(80,56,31,0.08)" }}>
 
           {/* ── Forgot success ──────────────────────────────────────────────── */}
-          {mode === "forgot-success" ? (
+          {mode === "mfa" ? (
+            <>
+              <h2 style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 22, color: TEXT, letterSpacing: "-0.01em" }}>
+                Authenticator code
+              </h2>
+              <p style={{ margin: "0 0 28px", fontSize: 13, color: MUTED }}>
+                Enter the 6-digit code from your authenticator app to finish signing in.
+              </p>
+              {error && (
+                <div style={{ backgroundColor: "#FEE2E2", border: "1px solid #FECACA", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#DC2626", marginBottom: 18 }} role="alert">
+                  {error}
+                </div>
+              )}
+              <form onSubmit={handleMfaSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label htmlFor="mfa-code" style={{ fontSize: 12, fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "0.05em" }}>Code</label>
+                  <input
+                    id="mfa-code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="123456"
+                    disabled={loading}
+                    style={{ height: 40, border: `1.5px solid ${BORDER}`, borderRadius: 8, padding: "0 12px", fontSize: 16, letterSpacing: "0.2em", color: TEXT, outline: "none", width: "100%", boxSizing: "border-box", backgroundColor: "#fff" }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading || mfaCode.length < 6}
+                  style={{ width: "100%", height: 44, backgroundColor: loading ? "#7A5C3C" : ACCENT, borderRadius: 8, border: "none", color: "#fff", fontWeight: 600, fontSize: 14, cursor: loading ? "not-allowed" : "pointer" }}
+                >
+                  {loading ? "Verifying…" : "Verify and continue"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode("login"); setMfaResolver(null); setMfaCode(""); setError(""); }}
+                  style={{ background: "none", border: "none", fontSize: 13, color: ACCENT, cursor: "pointer", fontWeight: 500 }}
+                >
+                  Back to login
+                </button>
+              </form>
+            </>
+          ) : mode === "forgot-success" ? (
             <div style={{ textAlign: "center" }}>
               <div style={{ width: 56, height: 56, borderRadius: "50%", backgroundColor: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
                 <Mail size={26} style={{ color: "#16A34A" }} />
