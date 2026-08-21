@@ -12,7 +12,7 @@ export type AgentType =
   | "banking"
   | "custom";
 
-export type AgentStatus = "active" | "draft" | "archived";
+export type AgentStatus = "active" | "paused" | "draft" | "archived";
 
 export interface AgentDefinition {
   id: string;

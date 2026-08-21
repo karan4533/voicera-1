@@ -57,6 +57,7 @@ export function CreateAccountModal({ onClose }: { onClose: () => void }) {
   };
 
   const createViaCloudFunction = async (agents: AgentType[]) => {
+    if (!functions) throw new Error("Firebase is not configured. Add VITE_FIREBASE_* to .env.local.");
     const createCustomerAccount = httpsCallable(functions, "createCustomerAccount");
     const result = await createCustomerAccount({
       email: email.trim().toLowerCase(),

@@ -123,6 +123,10 @@ export function subscribeNotifications(opts: {
   email: string;
   onUpdate: (items: AppNotification[]) => void;
 }): () => void {
+  if (!db) {
+    opts.onUpdate([]);
+    return () => {};
+  }
   const col = collection(db, "audit_events");
   const q = opts.isAdmin
     ? query(col, orderBy("createdAt", "desc"), limit(30))

@@ -22,9 +22,9 @@ import {
   type MultiFactorError,
   type MultiFactorResolver,
 } from "firebase/auth";
-import { auth as firebaseAuth } from "../lib/firebase";
+import { auth as firebaseAuth, isFirebaseConfigured } from "../lib/firebase";
 import { setCachedSession } from "../lib/auth";
-import type { AuthSession } from "../lib/auth";
+import type { AuthSession, UserRole } from "../lib/auth";
 import type { AgentType } from "../lib/types";
 import {
   getRoleFromTokenResult,
@@ -32,14 +32,19 @@ import {
   getSubscribedAgents,
   getOrgFromFirestore,
   getOrgByEmailFromFirestore,
+  PLATFORM_ADMIN_EMAILS,
 } from "../lib/rbac";
 import { recordAuditEvent, revokeMySessions } from "../lib/adminApi";
 import { safeLog } from "../lib/safeLog";
+
+const DEMO_SESSION_KEY = "voicera_demo_session";
 
 interface AuthContextValue {
   session: AuthSession | null;
   /** true while Firebase resolves the initial auth state on cold load */
   loading: boolean;
+  /** true when Firebase keys are missing and local demo login is active */
+  demoMode: boolean;
   login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   completeMfaLogin: (resolver: MultiFactorResolver, code: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -68,6 +73,32 @@ function asAuthCode(err: unknown): string {
     return String((err as { code: unknown }).code);
   }
   return "";
+}
+
+function buildDemoSession(email: string): AuthSession {
+  const normalized = email.trim().toLowerCase();
+  const isAdmin = PLATFORM_ADMIN_EMAILS.includes(normalized);
+  const role: UserRole = isAdmin ? "platform_admin" : "customer_admin";
+  const orgId = isAdmin ? undefined : "org-example-com";
+  const subscribedAgents: AgentType[] | undefined = isAdmin
+    ? undefined
+    : getSubscribedAgents(orgId) ?? ["restaurant", "loan"];
+
+  return {
+    token: "demo-token",
+    user: {
+      email: normalized,
+      name: normalized
+        .split("@")[0]
+        .replace(/[._]/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()),
+      role,
+      orgId,
+      subscribedAgents,
+      orgStatus: isAdmin ? undefined : "active",
+    },
+    expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+  };
 }
 
 async function buildSession(user: User): Promise<AuthSession> {
@@ -144,76 +175,146 @@ function clearClientSessionStorage() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const demoMode = !isFirebaseConfigured || !firebaseAuth;
 
   useEffect(() => {
-    const unsubscribe = onIdTokenChanged(firebaseAuth, async (user) => {
-      if (user) {
-        const s = await buildSession(user);
-        setCachedSession(s);
-        setSession(s);
-      } else {
-        setCachedSession(null);
-        setSession(null);
+    if (demoMode) {
+      try {
+        const raw = localStorage.getItem(DEMO_SESSION_KEY);
+        if (raw) {
+          const s = JSON.parse(raw) as AuthSession;
+          if (s?.user?.email && (s.expiresAt ?? 0) > Date.now()) {
+            setCachedSession(s);
+            setSession(s);
+          } else {
+            localStorage.removeItem(DEMO_SESSION_KEY);
+          }
+        }
+      } catch {
+        localStorage.removeItem(DEMO_SESSION_KEY);
       }
       setLoading(false);
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (!settled) {
+        settled = true;
+        setLoading(false);
+      }
+    };
+
+    // Safety net: never leave the UI on a blank loading state if Auth hangs
+    const timeout = window.setTimeout(finish, 4000);
+
+    const unsubscribe = onIdTokenChanged(firebaseAuth!, async (user) => {
+      try {
+        if (user) {
+          const s = await buildSession(user);
+          setCachedSession(s);
+          setSession(s);
+        } else {
+          setCachedSession(null);
+          setSession(null);
+        }
+      } catch (err) {
+        safeLog.warn("Failed to build auth session", err);
+        setCachedSession(null);
+        setSession(null);
+      } finally {
+        finish();
+      }
     });
-    return unsubscribe;
-  }, []);
+
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+    };
+  }, [demoMode]);
 
   const login = useCallback(
     async (email: string, password: string, rememberMe: boolean) => {
+      if (demoMode) {
+        if (!password.trim()) throw new Error("Password is required.");
+        const s = buildDemoSession(email);
+        setCachedSession(s);
+        setSession(s);
+        localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(s));
+        if (rememberMe) localStorage.setItem("remembered_email", email.trim().toLowerCase());
+        return;
+      }
+
       await setPersistence(
-        firebaseAuth,
+        firebaseAuth!,
         rememberMe ? browserLocalPersistence : browserSessionPersistence,
       );
       try {
-        await signInWithEmailAndPassword(firebaseAuth, email, password);
+        await signInWithEmailAndPassword(firebaseAuth!, email, password);
         await recordAuditEvent({ action: "login", detail: "Password sign-in" });
       } catch (err) {
         if (asAuthCode(err) === "auth/multi-factor-auth-required") {
           throw new MfaRequiredError(
-            getMultiFactorResolver(firebaseAuth, err as MultiFactorError),
+            getMultiFactorResolver(firebaseAuth!, err as MultiFactorError),
           );
         }
         throw err;
       }
     },
-    [],
+    [demoMode],
   );
 
   const completeMfaLogin = useCallback(
     async (resolver: MultiFactorResolver, code: string) => {
+      if (demoMode) throw new Error("MFA is not available in demo mode.");
       const hint = resolver.hints[0];
       if (!hint) throw new Error("No authenticator is enrolled on this account.");
       const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code.trim());
       await resolver.resolveSignIn(assertion);
       await recordAuditEvent({ action: "login", detail: "MFA sign-in" });
     },
-    [],
+    [demoMode],
   );
 
   const loginWithGoogle = useCallback(async () => {
-    await setPersistence(firebaseAuth, browserLocalPersistence);
+    if (demoMode) {
+      // Demo Google SSO — simulates Google Workspace sign-in without Firebase
+      const s = buildDemoSession("demo.sso@spicegarden.com");
+      setCachedSession(s);
+      setSession(s);
+      localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(s));
+      return;
+    }
+    await setPersistence(firebaseAuth!, browserLocalPersistence);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(firebaseAuth, provider);
-      await recordAuditEvent({ action: "login", detail: "Google sign-in" });
+      await signInWithPopup(firebaseAuth!, provider);
+      await recordAuditEvent({ action: "login", detail: "Google SSO sign-in" });
     } catch (err) {
       if (asAuthCode(err) === "auth/multi-factor-auth-required") {
         throw new MfaRequiredError(
-          getMultiFactorResolver(firebaseAuth, err as MultiFactorError),
+          getMultiFactorResolver(firebaseAuth!, err as MultiFactorError),
         );
       }
       throw err;
     }
-  }, []);
+  }, [demoMode]);
 
   const resetPassword = useCallback(async (email: string) => {
-    await sendPasswordResetEmail(firebaseAuth, email);
-  }, []);
+    if (demoMode) {
+      throw new Error("Password reset needs Firebase. Any password works in demo mode.");
+    }
+    await sendPasswordResetEmail(firebaseAuth!, email);
+  }, [demoMode]);
 
   const logout = useCallback(() => {
     void (async () => {
+      if (demoMode) {
+        localStorage.removeItem(DEMO_SESSION_KEY);
+        setCachedSession(null);
+        setSession(null);
+        return;
+      }
       try {
         await recordAuditEvent({ action: "logout", detail: "User signed out" });
       } catch (err) {
@@ -225,13 +326,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         safeLog.warn("session revoke on logout failed", err);
       }
       clearClientSessionStorage();
-      await signOut(firebaseAuth);
+      await signOut(firebaseAuth!);
     })();
-  }, []);
+  }, [demoMode]);
 
   return (
     <AuthContext.Provider
-      value={{ session, loading, login, completeMfaLogin, loginWithGoogle, resetPassword, logout }}
+      value={{ session, loading, demoMode, login, completeMfaLogin, loginWithGoogle, resetPassword, logout }}
     >
       {children}
     </AuthContext.Provider>

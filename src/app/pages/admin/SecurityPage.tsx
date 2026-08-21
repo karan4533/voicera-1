@@ -31,9 +31,13 @@ export function SecurityPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = auth.currentUser;
+    const user = auth?.currentUser;
     if (user) {
       setEnrolled(multiFactor(user).enrolledFactors.length > 0);
+    }
+    if (!db) {
+      setLoadError("Firebase is not configured in this environment.");
+      return;
     }
     (async () => {
       try {
@@ -62,7 +66,7 @@ export function SecurityPage() {
 
   const startEnroll = async () => {
     setMfaMessage(null);
-    const user = auth.currentUser;
+    const user = auth?.currentUser;
     if (!user) return;
     setMfaBusy(true);
     try {
@@ -81,7 +85,7 @@ export function SecurityPage() {
   };
 
   const confirmEnroll = async () => {
-    const user = auth.currentUser;
+    const user = auth?.currentUser;
     if (!user || !secret || code.length < 6) return;
     setMfaBusy(true);
     setMfaMessage(null);

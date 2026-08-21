@@ -27,7 +27,7 @@ const BORDER   = "#D6CFC4";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
-  const { login, completeMfaLogin, resetPassword, session } = useAuth();
+  const { login, completeMfaLogin, resetPassword, loginWithGoogle, session, demoMode } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<"login" | "forgot" | "forgot-success" | "mfa">("login");
@@ -45,6 +45,14 @@ export function LoginScreen() {
     else localStorage.removeItem("remembered_email");
   };
 
+  const finishLogin = (role?: string) => {
+    const multi = demoMode || localStorage.getItem("voicera_multi_tenant") === "1";
+    if (multi && role !== "platform_admin") {
+      sessionStorage.setItem("voicera_need_tenant", "1");
+    }
+    navigate(roleHome(role), { replace: true });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -60,7 +68,11 @@ export function LoginScreen() {
     try {
       await login(trimmed, password, rememberMe);
       rememberEmail(trimmed);
-      navigate(roleHome(session?.user.role), { replace: true });
+      // session may not be updated yet in same tick — use email-based role hint
+      const roleHint = trimmed.includes("admin@") || trimmed.includes("platform@")
+        ? "platform_admin"
+        : "customer_admin";
+      finishLogin(session?.user.role ?? roleHint);
     } catch (err) {
       if (isMfaRequiredError(err)) {
         setMfaResolver(err.resolver);
@@ -70,6 +82,19 @@ export function LoginScreen() {
       } else {
         setError(getFriendlyAuthErrorMessage(err));
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await loginWithGoogle();
+      finishLogin(session?.user.role ?? "customer_admin");
+    } catch (err) {
+      setError(getFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -186,7 +211,14 @@ export function LoginScreen() {
         {/* Form card */}
         <div style={{ width: "100%", maxWidth: 400, backgroundColor: SURFACE, borderRadius: 16, border: `1px solid ${BORDER}`, padding: "36px 36px", boxShadow: "0 4px 24px rgba(80,56,31,0.08)" }}>
 
-          {/* ── Forgot success ──────────────────────────────────────────────── */}
+          {demoMode && mode === "login" && (
+            <div style={{ backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400E", marginBottom: 18, lineHeight: 1.45 }}>
+              <strong>Local demo mode</strong> — Firebase is not configured.
+              Sign in with any email + password (e.g. <code>demo@spicegarden.com</code>).
+              Use <code>admin@voicera.ai</code> for platform admin.
+            </div>
+          )}
+
           {mode === "mfa" ? (
             <>
               <h2 style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 22, color: TEXT, letterSpacing: "-0.01em" }}>
@@ -259,7 +291,9 @@ export function LoginScreen() {
                 {mode === "login" ? "Sign in to Voicera" : "Reset your password"}
               </h2>
               <p style={{ margin: "0 0 28px", fontSize: 13, color: MUTED }}>
-                {mode === "login" ? "Enter your credentials to continue" : "We'll send a recovery link to your email"}
+                {mode === "login"
+                  ? "Use email and password, or continue with Google SSO. Your tenant is resolved from your account."
+                  : "We'll send a recovery link to your email"}
               </p>
 
 
@@ -335,6 +369,41 @@ export function LoginScreen() {
                 >
                   {loading ? (mode === "login" ? "Signing in…" : "Sending link…") : (mode === "login" ? "Sign In" : "Send Reset Link")}
                 </button>
+
+                {mode === "login" && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0" }}>
+                      <div style={{ flex: 1, height: 1, background: BORDER }} />
+                      <span style={{ fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>SSO</span>
+                      <div style={{ flex: 1, height: 1, background: BORDER }} />
+                    </div>
+                    <button
+                      type="button"
+                      id="google-sso-login"
+                      onClick={handleGoogle}
+                      disabled={loading}
+                      aria-label="Sign in with Google SSO"
+                      style={{
+                        width: "100%", height: 44, backgroundColor: "#fff", borderRadius: 8,
+                        border: `1.5px solid ${BORDER}`, color: TEXT, fontWeight: 600, fontSize: 14,
+                        cursor: loading ? "not-allowed" : "pointer", display: "flex",
+                        alignItems: "center", justifyContent: "center", gap: 10,
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                      </svg>
+                      Sign in with Google SSO
+                    </button>
+                    <p style={{ margin: 0, fontSize: 11, color: MUTED, textAlign: "center", lineHeight: 1.4 }}>
+                      Google SSO uses your Google Workspace / Google account.
+                      After SSO, if you belong to multiple tenants you will pick a workspace.
+                    </p>
+                  </>
+                )}
               </form>
             </>
           )}

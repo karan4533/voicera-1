@@ -4,31 +4,44 @@ import { useAuth } from "../context/AuthContext";
 import { SuspendedAccountScreen } from "./SuspendedAccountScreen";
 import type { UserRole } from "../lib/auth";
 
-// ── RoleRoute ─────────────────────────────────────────────────────────────────
-//
-// Thin wrapper that checks the authenticated user's role against an allowlist.
-// Unauthenticated users are sent to /login.
-// Authenticated users whose role is NOT in allowedRoles are redirected to
-// the appropriate default for their role:
-//   platform_admin  → /admin
-//   customer_*      → /dashboard
+function FullPageSpinner() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        backgroundColor: "#FAFAF9",
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          border: "3px solid #E2DDD5",
+          borderTopColor: "#50381F",
+          animation: "spin 0.75s linear infinite",
+        }}
+      />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
 interface RoleRouteProps {
   children: ReactNode;
-  /** Roles that are permitted to render children */
   allowedRoles: UserRole[];
 }
 
 export function RoleRoute({ children, allowedRoles }: RoleRouteProps) {
   const { session, loading } = useAuth();
 
-  // While Firebase resolves the persisted session, render nothing to avoid flash.
-  if (loading) return null;
+  if (loading) return <FullPageSpinner />;
 
-  // Not authenticated → go to login
   if (!session) return <Navigate to="/login" replace />;
 
-  // Role is permitted → render (block suspended customer tenants)
   if (allowedRoles.includes(session.user.role)) {
     const isCustomer = session.user.role === "customer_admin" || session.user.role === "customer_user";
     if (isCustomer && session.user.orgStatus === "suspended") {
@@ -37,7 +50,6 @@ export function RoleRoute({ children, allowedRoles }: RoleRouteProps) {
     return <>{children}</>;
   }
 
-  // Wrong role → redirect to the correct default home
   if (session.user.role === "platform_admin") {
     return <Navigate to="/admin" replace />;
   }

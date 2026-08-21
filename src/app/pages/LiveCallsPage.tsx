@@ -217,9 +217,9 @@ export function LiveCallsPage() {
         {/* Header */}
         <div className="p-4 border-b border-[#D6CFC4] bg-[#F7F4EF]">
           <h2 className="text-[16px] font-bold text-[#1E1A16] mb-1 flex items-center gap-2">
-            Live Operations <span className="bg-[#50381F] text-white text-[11px] px-2 py-0.5 rounded-full">{calls.filter(c => c.status === "Active").length} Active</span>
+            Live Calls Monitor <span className="bg-[#50381F] text-white text-[11px] px-2 py-0.5 rounded-full">{calls.filter(c => c.status === "Active").length} Active</span>
           </h2>
-          <p className="text-[12px] text-[#7A746C] mb-4">Enterprise supervisor dashboard</p>
+          <p className="text-[12px] text-[#7A746C] mb-4">In-progress calls across all active agents</p>
           
             <div className="relative mt-3">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7A746C]" />

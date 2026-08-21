@@ -131,8 +131,8 @@ export function AnalyticsPage() {
   return (
     <>
       <PageHeader 
-        title={`${agentLabel} Analytics`}
-        subtitle="Review transcripts, metrics, and follow-up actions for completed calls" 
+        title="Call Analytics"
+        subtitle={`Post-call review for ${agentLabel} — transcript, summary, sentiment, and action items`} 
       />
 
       {/* Global Metrics */}
@@ -351,6 +351,22 @@ export function AnalyticsPage() {
                     )}
                   </CardContent>
                 </Card>
+              </div>
+
+              {/* Audio playback */}
+              <div className="mb-6 rounded-lg border border-[#E2DDD5] bg-[#FDFDFD] p-4">
+                <h4 className="font-semibold text-sm text-[#1E1A14] m-0 mb-2">Call recording</h4>
+                <audio
+                  controls
+                  className="w-full h-10"
+                  preload="none"
+                  src={`data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=`}
+                >
+                  Your browser does not support audio playback.
+                </audio>
+                <p className="m-0 mt-2 text-[11px] text-[#9E9890]">
+                  Demo placeholder recording · {selectedCall.duration} · {selectedCall.date}
+                </p>
               </div>
 
               {/* Transcript */}

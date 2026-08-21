@@ -11,11 +11,11 @@ import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 // ── Admin nav items ────────────────────────────────────────────────────────────
 
 const adminNavItems = [
-  { icon: LayoutDashboard, label: "Overview",           path: "/admin" },
-  { icon: Users,           label: "Customer Accounts",  path: "/admin/customers" },
-  { icon: Package,         label: "Subscriptions",      path: "/admin/subscriptions" },
-  { icon: Activity,        label: "System Health",      path: "/admin/system-health" },
-  { icon: KeyRound,        label: "Security",           path: "/admin/security" },
+  { icon: LayoutDashboard, label: "Overview",              path: "/admin" },
+  { icon: Users,           label: "Tenant Management",     path: "/admin/customers" },
+  { icon: Package,         label: "Purchased Agents",      path: "/admin/subscriptions" },
+  { icon: Activity,        label: "System Health",         path: "/admin/system-health" },
+  { icon: KeyRound,        label: "Security",              path: "/admin/security" },
 ];
 
 // ── NavItem ────────────────────────────────────────────────────────────────────

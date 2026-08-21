@@ -10,7 +10,11 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { LiveCallsPage } from "./pages/LiveCallsPage";
 import { CallRemindersPage } from "./pages/CallRemindersPage";
 import { AgentsPage } from "./pages/AgentsPage";
+import { AgentLibraryPage } from "./pages/AgentLibraryPage";
 import { CustomizePage } from "./pages/CustomizePage";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
+import { TeamPage } from "./pages/TeamPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
 
 // ── Admin Console ──────────────────────────────────────────────────────────────
 import { AdminLayout } from "./layouts/AdminLayout";
@@ -27,9 +31,15 @@ import { useAuth } from "./context/AuthContext";
 /** Redirects already-authenticated users away from the login page. */
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#FAFAF9" }}>
+        <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #E2DDD5", borderTopColor: "#50381F", animation: "spin 0.75s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
   if (session) {
-    // Send to the correct home based on role
     return <Navigate to={session.user.role === "platform_admin" ? "/admin" : "/dashboard"} replace />;
   }
   return <>{children}</>;
@@ -77,41 +87,49 @@ export default function App() {
                 </RoleRoute>
               }
             >
-              {/* Default → Dashboard & Analytics */}
+              {/* PRD: Login → Dashboard → Library → Configure → My Agents
+                  Ops: Live Calls ↔ Call Analytics ↔ Outbound Campaign · Team */}
               <Route index element={<DashboardPage />} />
-
-              {/* Agent management & configuration */}
-              <Route path="agents"   element={<AgentsPage />} />
+              <Route path="library" element={<AgentLibraryPage />} />
               <Route
-                path="customize"
+                path="configure"
                 element={
                   <RoleRoute allowedRoles={["customer_admin"]}>
                     <CustomizePage />
                   </RoleRoute>
                 }
               />
-              <Route path="usage" element={<UsagePage />} />
-
-              {/* Call management — customer_user is view-only */}
+              <Route path="agents" element={<AgentsPage />} />
+              <Route path="live-calls" element={<LiveCallsPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="knowledge" element={<KnowledgePage />} />
               <Route
-                path="call-reminders"
+                path="campaigns"
                 element={
                   <RoleRoute allowedRoles={["customer_admin"]}>
                     <CallRemindersPage />
                   </RoleRoute>
                 }
               />
-              <Route path="live-calls"     element={<LiveCallsPage />} />
+              <Route
+                path="team"
+                element={
+                  <RoleRoute allowedRoles={["customer_admin"]}>
+                    <TeamPage />
+                  </RoleRoute>
+                }
+              />
+              <Route path="usage" element={<UsagePage />} />
 
-              {/* Legacy redirects — keep old URLs working */}
+              {/* Legacy redirects */}
+              <Route path="customize" element={<Navigate to="/dashboard/configure" replace />} />
+              <Route path="call-reminders" element={<Navigate to="/dashboard/campaigns" replace />} />
               <Route path="monitoring" element={<Navigate to="/dashboard" replace />} />
-              <Route path="analytics"  element={<Navigate to="/dashboard" replace />} />
-              <Route path="settings"   element={<CustomizePage />} />
+              <Route path="settings" element={<Navigate to="/dashboard/configure" replace />} />
             </Route>
 
-            {/* ── Catch-all ────────────────────────────────────────────────── */}
-            {/* RoleRoute will handle the role-correct redirect once session loads */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            {/* ── Catch-all → login (RoleRoute handles authenticated redirects) ─ */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </BrowserRouter>
       </AgentProvider>

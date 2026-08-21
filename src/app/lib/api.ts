@@ -282,6 +282,16 @@ export async function setCampaignStatus(state: CampaignState): Promise<void> {
 }
 
 /**
+ * GET /outbound/eta
+ * Returns estimated time remaining for the running campaign queue.
+ */
+export async function getCampaignEta(): Promise<string> {
+  if (USE_MOCK) return mock.getEstimatedTimeRemaining();
+  const data = await apiFetch<{ eta: string }>("/outbound/eta");
+  return data.eta;
+}
+
+/**
  * POST /outbound/customers/upload
  * Body: FormData ({ file })
  * Returns: CampaignCustomer[]

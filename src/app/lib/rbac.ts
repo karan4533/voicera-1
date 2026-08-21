@@ -210,6 +210,7 @@ function parseOrgData(data: Record<string, unknown>, fallbackId?: string): OrgRe
 export async function getOrgFromFirestore(
   orgId: string
 ): Promise<OrgRecord | undefined> {
+  if (!db) return undefined;
   try {
     const snap = await getDoc(doc(db, "organizations", orgId));
     if (!snap.exists()) return undefined;
@@ -224,6 +225,7 @@ export async function getOrgFromFirestore(
 export async function getOrgByEmailFromFirestore(
   email: string
 ): Promise<(OrgRecord & { orgId: string }) | undefined> {
+  if (!db) return undefined;
   try {
     const normalized = email.trim().toLowerCase();
     const snap = await getDocs(
@@ -266,6 +268,7 @@ function formatOrgCreatedAt(createdAt: unknown): string {
 
 /** Loads all tenant organisations from Firestore for the Admin console. */
 export async function fetchOrganizationsFromFirestore(): Promise<MockOrganisation[]> {
+  if (!db) return [];
   const snap = await getDocs(collection(db, "organizations"));
   return snap.docs.map((d) => {
     const data = d.data();

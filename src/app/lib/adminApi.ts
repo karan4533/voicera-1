@@ -8,6 +8,7 @@ export async function recordAuditEvent(input: {
   targetEmail?: string;
   detail?: string;
 }): Promise<void> {
+  if (!functions) return;
   try {
     await httpsCallable(functions, "recordAuditEvent")(input);
   } catch (err) {
@@ -16,6 +17,7 @@ export async function recordAuditEvent(input: {
 }
 
 export async function revokeMySessions(): Promise<void> {
+  if (!functions) return;
   await httpsCallable(functions, "revokeMySessions")({});
 }
 
@@ -24,9 +26,11 @@ export async function adminUpdateOrganization(input: {
   status?: "active" | "suspended" | "trial";
   subscribedAgents?: string[];
 }): Promise<void> {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
   await httpsCallable(functions, "adminUpdateOrganization")(input);
 }
 
 export async function offboardCustomer(orgId: string): Promise<void> {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
   await httpsCallable(functions, "offboardCustomer")({ orgId });
 }

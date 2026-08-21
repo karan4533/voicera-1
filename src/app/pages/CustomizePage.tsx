@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   Plus, Trash2, Save, UtensilsCrossed, MessageSquareDashed,
-  X, CheckCircle2, Users, ClipboardList, Phone, GripVertical,
+  X, CheckCircle2, Users, ClipboardList, Phone, GripVertical, Rocket, Upload,
 } from "lucide-react";
 import { PageHeader } from "../components/shared/PageHeader";
-import { useAgent } from "../context/AgentContext";
+import { useAgent, AGENT_TYPES } from "../context/AgentContext";
+import type { AgentType } from "../lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -538,17 +540,179 @@ function FeedbackCustomize() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function CustomizePage() {
-  const { agent, agentLabel } = useAgent();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { agent, agentLabel, setAgent, addAgentDef } = useAgent();
+  const [launched, setLaunched] = useState(false);
+
+  const templateParam = searchParams.get("template") as AgentType | null;
+  const catalog = AGENT_TYPES.find((t) => t.id === (templateParam ?? agent)) ?? AGENT_TYPES[0];
+
+  const [agentName, setAgentName] = useState(catalog.label);
+  const [instructions, setInstructions] = useState(
+    `You are a helpful voice agent for ${catalog.label}. Follow the use-case script, confirm details, and keep responses concise.`,
+  );
+  const [voice, setVoice] = useState("Professional & Clear");
+  const [languages, setLanguages] = useState<string[]>(["English"]);
+  const [kbFiles, setKbFiles] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (templateParam && AGENT_TYPES.some((t) => t.id === templateParam)) {
+      setAgent(templateParam);
+      const c = AGENT_TYPES.find((t) => t.id === templateParam)!;
+      setAgentName(c.label);
+      setInstructions(
+        `You are a helpful voice agent for ${c.label}. Follow the use-case script, confirm details, and keep responses concise.`,
+      );
+    }
+  }, [templateParam, setAgent]);
 
   const isRestaurant = agent === "restaurant";
+
+  const toggleLanguage = (lang: string) => {
+    setLanguages((prev) =>
+      prev.includes(lang) ? (prev.length === 1 ? prev : prev.filter((l) => l !== lang)) : [...prev, lang],
+    );
+  };
+
+  const handleKbUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setKbFiles((prev) => [...prev, ...files.map((f) => f.name)]);
+    e.target.value = "";
+  };
+
+  const handleLaunch = () => {
+    if (!catalog) return;
+    addAgentDef({
+      name: agentName.trim() || catalog.label,
+      type: agent,
+      category: catalog.category,
+      description: instructions.trim() || catalog.description,
+      icon: catalog.icon,
+      color: catalog.color,
+      status: "active",
+      tone: voice,
+      languages,
+    });
+    setLaunched(true);
+    setTimeout(() => navigate("/dashboard/agents"), 800);
+  };
+
+  const VOICES = [
+    "Professional & Clear",
+    "Friendly & Warm",
+    "Professional & Empathetic",
+    "Energetic & Concise",
+  ];
+  const LANG_OPTIONS = ["English", "Hindi", "Tamil", "Telugu", "Gujarati", "Marathi"];
 
   return (
     <>
       <PageHeader
-        title="Customize Instance"
-        subtitle={`Configure the ${agentLabel} agent — ${isRestaurant ? "menu, pricing and call behaviour" : "contact list, feedback questions and call script"}`}
+        title="Configure & Launch"
+        subtitle="Agent name, custom instructions, voice, language, and knowledge base — then launch to My Agents"
+        action={
+          <button
+            type="button"
+            onClick={handleLaunch}
+            disabled={launched}
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border-none bg-[#50381F] text-white text-[13px] font-semibold cursor-pointer hover:bg-[#3D2914] disabled:opacity-70"
+          >
+            {launched ? <CheckCircle2 size={14} /> : <Rocket size={14} />}
+            {launched ? "Launched!" : "Launch agent"}
+          </button>
+        }
       />
+
+      <div className="mb-5 rounded-lg border border-[rgba(181,118,58,0.3)] bg-[rgba(181,118,58,0.08)] px-3 py-2 text-[12.5px] text-[#b5763a]">
+        Config + Launch → new instance appears under My Agents
+      </div>
+
       <div className="flex flex-col gap-5">
+        {/* Shared PRD config fields */}
+        <div className="bg-white border border-[#E2DDD5] rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#E2DDD5] bg-[#F7F4EF]">
+            <h2 className="m-0 text-[14px] font-semibold text-[#1E1A14]">Agent configuration</h2>
+            <p className="m-0 text-[11px] text-[#9E9890]">Required fields before launch</p>
+          </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-[12px] font-medium text-[#7A746C] mb-1.5">Agent name</label>
+              <input
+                value={agentName}
+                onChange={(e) => setAgentName(e.target.value)}
+                className="w-full h-10 px-3 text-[13px] border border-[#E2DDD5] rounded-lg focus:outline-none focus:border-[#C9B99E]"
+                placeholder="e.g. Spice Garden Dinner Orders"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-[12px] font-medium text-[#7A746C] mb-1.5">Custom instructions / prompt</label>
+              <textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 text-[13px] border border-[#E2DDD5] rounded-lg focus:outline-none focus:border-[#C9B99E] resize-y"
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#7A746C] mb-1.5">Voice</label>
+              <select
+                value={voice}
+                onChange={(e) => setVoice(e.target.value)}
+                className="w-full h-10 px-3 text-[13px] border border-[#E2DDD5] rounded-lg bg-white focus:outline-none focus:border-[#C9B99E]"
+              >
+                {VOICES.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#7A746C] mb-1.5">Languages</label>
+              <div className="flex flex-wrap gap-1.5">
+                {LANG_OPTIONS.map((lang) => {
+                  const on = languages.includes(lang);
+                  return (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => toggleLanguage(lang)}
+                      className={`h-8 px-2.5 rounded-lg text-[12px] font-medium border cursor-pointer ${
+                        on
+                          ? "bg-[#50381F] text-white border-[#50381F]"
+                          : "bg-white text-[#7A746C] border-[#E2DDD5]"
+                      }`}
+                    >
+                      {lang}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-[12px] font-medium text-[#7A746C] mb-1.5">Knowledge base upload</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-[#E2DDD5] bg-white text-[13px] font-medium text-[#1E1A14] cursor-pointer hover:bg-[#F7F4EF]">
+                  <Upload size={14} />
+                  Upload files
+                  <input type="file" multiple accept=".pdf,.doc,.docx,.txt,.csv,.xlsx" className="hidden" onChange={handleKbUpload} />
+                </label>
+                {kbFiles.length === 0 ? (
+                  <span className="text-[12px] text-[#9E9890]">PDF, DOCX, TXT, CSV, XLSX</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {kbFiles.map((f) => (
+                      <span key={f} className="text-[11px] font-medium bg-[#EDE4D8] text-[#50381F] px-2 py-1 rounded-md">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {isRestaurant ? <RestaurantCustomize /> : <FeedbackCustomize />}
       </div>
     </>

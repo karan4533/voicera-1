@@ -3,16 +3,19 @@ import { useNavigate } from "react-router";
 import {
   Phone, Search, Plus, Upload, X, ChevronDown,
   CheckCircle2, Clock, PhoneOff, RefreshCw,
-  User, MapPin, Tag, FileText, History, Download,
+  User, MapPin, Tag, FileText, History, Download, Play, Pause,
 } from "lucide-react";
 import {
   getReminderContacts,
   addReminderContact,
   updateReminderStatus,
   bulkImportReminders,
+  getCampaignStatus,
+  setCampaignStatus,
+  getCampaignEta,
 } from "../lib/api";
 import { parseCsv } from "../lib/csv";
-import type { ReminderContact, ReminderDomain, ReminderStatus } from "../lib/types";
+import type { ReminderContact, ReminderDomain, ReminderStatus, CampaignState } from "../lib/types";
 import { useAgent } from "../context/AgentContext";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -123,10 +126,55 @@ export function CallRemindersPage() {
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Campaign queue controls
+  const [campaignState, setCampaignStateLocal] = useState<CampaignState>("idle");
+  const [campaignEta, setCampaignEta] = useState("—");
+
+  // Stats (needed for ETA + KPI strip)
+  const total     = contacts.filter(c => c.domain === agent).length;
+  const pending   = contacts.filter(c => c.domain === agent && (c.status === "pending" || c.status === "no-answer")).length;
+  const completed = contacts.filter(c => c.domain === agent && c.status === "completed").length;
+  const inCall    = contacts.filter(c => c.domain === agent && c.status === "calling").length;
+  const attempted = completed + inCall + contacts.filter(c => c.domain === agent && c.status === "no-answer").length;
+  const connectRate = attempted > 0 ? Math.round((completed / attempted) * 100) : 0;
+
   // Load
   useEffect(() => {
     getReminderContacts().then((data) => { setContacts(data); setLoading(false); });
+    getCampaignStatus().then(setCampaignStateLocal);
   }, []);
+
+  useEffect(() => {
+    if (campaignState !== "running") {
+      setCampaignEta(pending > 0 ? "Paused — start queue" : "—");
+      return;
+    }
+    // Local ETA: ~45s per pending contact at concurrency 3
+    const computeLocal = () => {
+      if (pending === 0) return "Done";
+      const mins = Math.max(1, Math.ceil((pending * 45) / (3 * 60)));
+      return mins < 60 ? `~${mins} min` : `~${Math.floor(mins / 60)}h ${mins % 60}m`;
+    };
+    setCampaignEta(computeLocal());
+    const tick = () => {
+      getCampaignEta().then((eta) => {
+        setCampaignEta(eta === "—" ? computeLocal() : eta);
+      });
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => clearInterval(id);
+  }, [campaignState, pending]);
+
+  const handleCampaignToggle = async () => {
+    if (campaignState === "running") {
+      await setCampaignStatus("paused");
+      setCampaignStateLocal("paused");
+    } else {
+      await setCampaignStatus("running");
+      setCampaignStateLocal("running");
+    }
+  };
 
   // Filtered contacts
   const filtered = contacts.filter((c) => {
@@ -136,12 +184,6 @@ export function CallRemindersPage() {
     const matchStatus = statusFilter === "all" || c.status === statusFilter;
     return matchSearch && matchDomain && matchStatus;
   });
-
-  // Stats
-  const total     = contacts.filter(c => c.domain === agent).length;
-  const pending   = contacts.filter(c => c.domain === agent && (c.status === "pending" || c.status === "no-answer")).length;
-  const completed = contacts.filter(c => c.domain === agent && c.status === "completed").length;
-  const inCall    = contacts.filter(c => c.domain === agent && c.status === "calling").length;
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -232,10 +274,23 @@ export function CallRemindersPage() {
         <div className="shrink-0 mb-5">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h1 className="text-xl font-bold text-[#1E1A14] tracking-tight">{agentLabel} Call Scheduler</h1>
-              <p className="text-[13px] text-[#7A746C] mt-0.5">Schedule, manage, and initiate outbound calls for {agentLabel.toLowerCase()}</p>
+              <h1 className="text-xl font-bold text-[#1E1A14] tracking-tight">Outbound Campaign</h1>
+              <p className="text-[13px] text-[#7A746C] mt-0.5">
+                Upload contacts, start/pause the queue, monitor connect rate and queue remaining for {agentLabel}
+              </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCampaignToggle}
+                className={`flex items-center gap-1.5 text-[13px] font-semibold px-3 py-2 rounded-lg border-none cursor-pointer transition-colors ${
+                  campaignState === "running"
+                    ? "bg-amber-500 text-white hover:bg-amber-600"
+                    : "bg-[#16A34A] text-white hover:bg-[#15803D]"
+                }`}
+              >
+                {campaignState === "running" ? <><Pause size={14} /> Pause queue</> : <><Play size={14} /> Start campaign</>}
+              </button>
               <button
                 onClick={() => setImportOpen(true)}
                 className="flex items-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg border border-[#E2DDD5] bg-white text-[#4A453E] cursor-pointer hover:bg-[#F9F9F7] transition-colors"
@@ -253,18 +308,25 @@ export function CallRemindersPage() {
         </div>
 
         {/* ── Stats strip ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5 shrink-0">
           {[
-            { label: "Total",     value: total,     color: "#1E1A14" },
-            { label: "Pending",   value: pending,   color: "#D97706" },
-            { label: "Completed", value: completed, color: "#16A34A" },
-            { label: "In Call",   value: inCall,    color: "#2563EB" },
+            { label: "Queue remaining", value: String(pending), color: "#D97706" },
+            { label: "Connect rate", value: `${connectRate}%`, color: "#16A34A" },
+            { label: "Completed", value: String(completed), color: "#1E1A14" },
+            { label: "In call", value: String(inCall), color: "#2563EB" },
+            { label: "Queue ETA", value: campaignEta, color: "#50381F" },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-xl border border-[#E2DDD5] px-4 py-3 shadow-sm">
               <div className="text-[10px] text-[#9E9890] uppercase tracking-wider mb-0.5">{s.label}</div>
               <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
             </div>
           ))}
+        </div>
+        <div className="mb-4 text-[12px] text-[#7A746C]">
+          Campaign status:{" "}
+          <span className="font-semibold text-[#1E1A14] capitalize">{campaignState}</span>
+          {" · "}
+          {total} contacts in list
         </div>
 
         {/* ── Filter bar ── */}

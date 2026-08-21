@@ -1,27 +1,27 @@
 import { useEffect, useState, useCallback } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
 import {
-  Bot, LayoutDashboard, Sliders, BellRing, Phone,
-  Menu, X, LogOut, HelpCircle, Building2, CreditCard,
+  Bot, LayoutDashboard, Library, Phone, BarChart3, Rocket,
+  Megaphone, Users, Menu, X, LogOut, HelpCircle, Building2, CreditCard,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { AgentSwitcher } from "../components/AgentSwitcher";
 import { NotificationBell } from "../components/NotificationBell";
+import { CORE_SETUP_NAV, OPERATIONS_NAV, TENANT_ADMIN_NAV } from "../lib/workflow";
 import { getSystemHealth } from "../lib/api";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
-// ── Sidebar nav items ──────────────────────────────────────────────────────────
-
-const allNavItems = [
-  { icon: Bot,             label: "Agents",           path: "/dashboard/agents",          adminOnly: false },
-  { icon: LayoutDashboard, label: "Dashboard",        path: "/dashboard",                 adminOnly: false },
-  { icon: Sliders,         label: "Customize Agent",  path: "/dashboard/customize",       adminOnly: true },
-  { icon: BellRing,        label: "Call Scheduler",   path: "/dashboard/call-reminders",  adminOnly: true },
-  { icon: Phone,           label: "Live Calls",       path: "/dashboard/live-calls",      adminOnly: false },
-  { icon: CreditCard,      label: "Usage & credits",  path: "/dashboard/usage",           adminOnly: false },
-];
-
-// ── NavItem ────────────────────────────────────────────────────────────────────
+const ICON_BY_ID: Record<string, typeof Phone> = {
+  dashboard: LayoutDashboard,
+  library: Library,
+  configure: Rocket,
+  agents: Bot,
+  live: Phone,
+  analytics: BarChart3,
+  campaigns: Megaphone,
+  team: Users,
+  usage: CreditCard,
+};
 
 function NavItem({ icon: Icon, label, path, end, onNavigate }: {
   icon: typeof Phone; label: string; path: string; end?: boolean; onNavigate?: () => void;
@@ -45,6 +45,16 @@ function NavItem({ icon: Icon, label, path, end, onNavigate }: {
   );
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-5 pt-3 pb-1.5">
+      <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
 // ── Layout ─────────────────────────────────────────────────────────────────────
 
 export function DashboardLayout() {
@@ -53,6 +63,30 @@ export function DashboardLayout() {
   const [health, setHealth] = useState({ status: "healthy", activeCalls: 0, avgLatency: 420 });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [tenantPicker, setTenantPicker] = useState(
+    () => sessionStorage.getItem("voicera_need_tenant") === "1",
+  );
+  const [tenantName, setTenantName] = useState(
+    () => sessionStorage.getItem("voicera_active_tenant_name") || "",
+  );
+
+  const isAdmin = session?.user.role === "customer_admin";
+
+  const DEMO_TENANTS = [
+    { id: "org-example-com", name: "Spice Garden Restaurants", detail: "Restaurant Ordering agents" },
+    { id: "org-finance-corp-com", name: "Swift Finance Corp", detail: "Loan / EMI follow-up agents" },
+  ];
+
+  const pickTenant = (id: string, name: string) => {
+    sessionStorage.setItem("voicera_active_tenant", id);
+    sessionStorage.setItem("voicera_active_tenant_name", name);
+    sessionStorage.removeItem("voicera_need_tenant");
+    setTenantName(name);
+    setTenantPicker(false);
+  };
+
+  const filterAdmin = <T extends { adminOnly?: boolean }>(items: readonly T[]) =>
+    items.filter((item) => isAdmin || !item.adminOnly);
 
   useEffect(() => {
     const load = () => getSystemHealth().then(setHealth);
@@ -103,23 +137,39 @@ export function DashboardLayout() {
         </button>
       </div>
 
-      {/* Section label */}
-      <div className="px-5 pb-2">
-        <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-          Navigation
-        </span>
-      </div>
-
-      <nav className="flex flex-1 flex-col gap-0.5">
-        {allNavItems
-          .filter((item) => session?.user.role !== "customer_user" || !item.adminOnly)
-          .map(({ icon, label, path }) => (
+      <SectionLabel>Setup</SectionLabel>
+      <nav className="flex flex-col gap-0.5">
+        {filterAdmin(CORE_SETUP_NAV).map((item) => (
           <NavItem
-            key={path}
-            icon={icon}
-            label={label}
-            path={path}
-            end={path === "/dashboard"}
+            key={item.path}
+            icon={ICON_BY_ID[item.id] ?? LayoutDashboard}
+            label={item.label}
+            path={item.path}
+            end={item.path === "/dashboard"}
+            onNavigate={closeSidebar}
+          />
+        ))}
+      </nav>
+
+      <SectionLabel>Operations</SectionLabel>
+      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+        {filterAdmin(OPERATIONS_NAV).map((item) => (
+          <NavItem
+            key={item.path}
+            icon={ICON_BY_ID[item.id] ?? Phone}
+            label={item.label}
+            path={item.path}
+            onNavigate={closeSidebar}
+          />
+        ))}
+
+        <SectionLabel>Admin</SectionLabel>
+        {filterAdmin(TENANT_ADMIN_NAV).map((item) => (
+          <NavItem
+            key={item.path}
+            icon={ICON_BY_ID[item.id] ?? Users}
+            label={item.label}
+            path={item.path}
             onNavigate={closeSidebar}
           />
         ))}
@@ -168,7 +218,9 @@ export function DashboardLayout() {
         {session?.user.orgId && (
           <div className="flex items-center gap-1.5 px-[18px] pb-2">
             <Building2 size={10} className="text-white/30 shrink-0" />
-            <span className="text-[10px] text-white/30 truncate font-mono">{session.user.orgId}</span>
+            <span className="text-[10px] text-white/30 truncate font-mono">
+              {tenantName || sessionStorage.getItem("voicera_active_tenant_name") || session.user.orgId}
+            </span>
           </div>
         )}
       </div>
@@ -208,7 +260,7 @@ export function DashboardLayout() {
                 <Menu size={18} color="#7A746C" />
               </button>
               <div className="hidden sm:flex items-center gap-2">
-                <span className="text-[12px] font-medium text-[#9E9890]">Active Agent:</span>
+                <span className="text-[12px] font-medium text-[#9E9890]">Active agent:</span>
                 <AgentSwitcher />
               </div>
             </div>
@@ -234,6 +286,38 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Post-login multi-tenant switcher — blocking until a workspace is chosen */}
+      {tenantPicker && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/50">
+          <div className="w-[440px] max-w-[92vw] rounded-xl bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-label="Choose tenant workspace">
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#b5763a]">Workspace</div>
+            <h2 className="m-0 mb-2 text-base font-bold text-[#1E1A14]">Choose your tenant</h2>
+            <p className="m-0 mb-4 text-[13px] text-[#7A746C] leading-relaxed">
+              Your account belongs to <strong>more than one organization</strong>.
+              Pick the tenant for this session — agents, calls, and campaigns stay scoped to that org.
+              Sign out and back in to switch again.
+            </p>
+            <p className="m-0 mb-4 text-[12px] text-[#9E9890]">
+              Signed in as <span className="font-mono text-[#50381F]">{session?.user.email}</span>
+            </p>
+            <div className="flex flex-col gap-2">
+              {DEMO_TENANTS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => pickTenant(t.id, t.name)}
+                  className="text-left rounded-lg border border-[#E2DDD5] bg-white px-4 py-3 cursor-pointer hover:border-[#C9B99E] hover:bg-[#F7F4EF]"
+                >
+                  <div className="text-[14px] font-semibold text-[#1E1A14]">{t.name}</div>
+                  <div className="text-[12px] text-[#7A746C] mt-0.5">{t.detail}</div>
+                  <div className="text-[11px] text-[#9E9890] font-mono mt-1">{t.id}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Logout confirmation dialog */}
       {logoutConfirm && (
