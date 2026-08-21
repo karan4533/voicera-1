@@ -14,14 +14,14 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Stethoscope, Building2, Shield, Users, CreditCard, Cpu, Bot,
 };
 
-function TemplateIcon({ name, size = 22 }: { name: string; size?: number }) {
+function TemplateIcon({ name, size = 16 }: { name: string; size?: number }) {
   const Icon = ICON_MAP[name] ?? Bot;
   return <Icon size={size} />;
 }
 
 /**
- * Agent Library — catalog of templates grouped by use case.
- * Selecting a template opens Configure & Launch (CustomizePage).
+ * Agent Library — template catalog in tabular form.
+ * Selecting Configure & Launch opens the configuration flow.
  */
 export function AgentLibraryPage() {
   const navigate = useNavigate();
@@ -45,28 +45,20 @@ export function AgentLibraryPage() {
     });
   }, [search, subscribed]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, typeof templates>();
-    for (const t of templates) {
-      const list = map.get(t.category) ?? [];
-      list.push(t);
-      map.set(t.category, list);
-    }
-    return Array.from(map.entries());
-  }, [templates]);
-
   const openConfigure = (type: AgentType) => {
     navigate(`/dashboard/configure?template=${type}`);
   };
 
   return (
-    <div>
-      <PageHeader
-        title="Agent Library"
-        subtitle="Catalog of agent templates by use case — select one to configure and launch"
-      />
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="shrink-0 mb-5">
+        <PageHeader
+          title="Agent Library"
+          subtitle="Catalog of agent templates by use case — select one to configure and launch"
+        />
+      </div>
 
-      <div className="relative mb-6 max-w-md">
+      <div className="relative mb-4 max-w-md shrink-0">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9E9890]" />
         <input
           type="text"
@@ -77,52 +69,82 @@ export function AgentLibraryPage() {
         />
       </div>
 
-      {grouped.length === 0 ? (
-        <div className="rounded-xl border border-[#E2DDD5] bg-white py-16 text-center text-[#9E9890]">
-          <Bot size={36} className="mx-auto mb-3 opacity-30" />
-          <p className="text-[14px] font-medium m-0">No templates match your search</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-8">
-          {grouped.map(([category, items]) => (
-            <section key={category}>
-              <h2 className="m-0 mb-3 text-[12px] font-bold uppercase tracking-wider text-[#9E9890]">
-                {category}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                {items.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => openConfigure(t.id as AgentType)}
-                    className="text-left bg-white border border-[#E2DDD5] rounded-xl p-5 hover:border-[#C9B99E] hover:shadow-sm transition-all cursor-pointer"
-                  >
-                    <div className="flex items-start gap-3 mb-3">
+      <div className="flex-1 overflow-auto rounded-xl border border-[#E2DDD5] bg-white shadow-sm">
+        <table className="w-full border-collapse text-[13px]">
+          <thead className="sticky top-0 bg-[#F7F4EF] z-10">
+            <tr className="border-b border-[#E2DDD5]">
+              <th className="text-left text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                Template
+              </th>
+              <th className="text-left text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-4 py-3 whitespace-nowrap">
+                Category
+              </th>
+              <th className="text-left text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-4 py-3">
+                Description
+              </th>
+              <th className="text-right text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-5 py-3 whitespace-nowrap">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {templates.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="text-center py-16 text-[#9E9890]">
+                  <Bot size={36} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-[14px] font-medium m-0">No templates match your search</p>
+                </td>
+              </tr>
+            ) : (
+              templates.map((t, i) => (
+                <tr
+                  key={t.id}
+                  className={`hover:bg-[#FAFAF8] transition-colors ${
+                    i < templates.length - 1 ? "border-b border-[#F0EDE8]" : ""
+                  }`}
+                >
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
                       <div
-                        className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${t.color}15`, color: t.color, border: `1px solid ${t.color}30` }}
+                        className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: `${t.color}15`,
+                          color: t.color,
+                          border: `1px solid ${t.color}30`,
+                        }}
                       >
                         <TemplateIcon name={t.icon} />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-[14px] text-[#1E1A14] leading-snug">{t.label}</div>
-                        <div className="text-[11px] text-[#9E9890] mt-0.5">{t.category}</div>
+                      <div>
+                        <div className="font-bold text-[#1E1A14]">{t.label}</div>
+                        <div className="text-[11px] text-[#7A746C] font-mono mt-0.5">{t.id}</div>
                       </div>
                     </div>
-                    <p className="m-0 mb-4 text-[13px] text-[#7A746C] leading-relaxed line-clamp-2">
-                      {t.description}
-                    </p>
-                    <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#50381F]">
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className="text-[11px] font-bold text-[#4A453E] bg-[#F7F4EF] border border-[#E2DDD5] px-2 py-1 rounded-md whitespace-nowrap">
+                      {t.category}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5 text-[#7A746C] max-w-md">
+                    <span className="line-clamp-2">{t.description}</span>
+                  </td>
+                  <td className="px-5 py-3.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openConfigure(t.id as AgentType)}
+                      className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border-none bg-[#50381F] text-white text-[12px] font-semibold cursor-pointer hover:bg-[#3D2914] transition-colors whitespace-nowrap"
+                    >
                       <Rocket size={13} />
                       Configure &amp; Launch
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
