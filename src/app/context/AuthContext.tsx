@@ -4,6 +4,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   type ReactNode,
 } from "react";
 import {
@@ -24,7 +25,7 @@ import {
 } from "firebase/auth";
 import { auth as firebaseAuth, isFirebaseConfigured } from "../lib/firebase";
 import { setCachedSession } from "../lib/auth";
-import type { AuthSession, UserRole } from "../lib/auth";
+import type { AuthSession } from "../lib/auth";
 import type { AgentType } from "../lib/types";
 import {
   getRoleFromTokenResult,
@@ -32,8 +33,16 @@ import {
   getSubscribedAgents,
   getOrgFromFirestore,
   getOrgByEmailFromFirestore,
-  PLATFORM_ADMIN_EMAILS,
 } from "../lib/rbac";
+import {
+  isPlatformAdminEmail,
+  getMembershipOrgIds,
+  resolvePrimaryOrgId,
+  listUserTenants,
+  canAccessTenant,
+  agentsForOrg,
+  type TenantInfo,
+} from "../lib/tenantMemberships";
 import { recordAuditEvent, revokeMySessions } from "../lib/adminApi";
 import { safeLog } from "../lib/safeLog";
 
@@ -45,10 +54,14 @@ interface AuthContextValue {
   loading: boolean;
   /** true when Firebase keys are missing and local demo login is active */
   demoMode: boolean;
+  /** Purchased tenants the signed-in user may enter (demo memberships / empty until Firestore) */
+  userTenants: TenantInfo[];
   login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   completeMfaLogin: (resolver: MultiFactorResolver, code: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  /** Switch active tenant workspace (org + subscribed agents) for this session */
+  switchTenant: (orgId: string) => void;
   /** Kept synchronous at the call-site; Firebase signOut is fire-and-forget */
   logout: () => void;
 }
@@ -77,28 +90,53 @@ function asAuthCode(err: unknown): string {
 
 function buildDemoSession(email: string): AuthSession {
   const normalized = email.trim().toLowerCase();
-  const isAdmin = PLATFORM_ADMIN_EMAILS.includes(normalized);
-  const role: UserRole = isAdmin ? "platform_admin" : "customer_admin";
-  const orgId = isAdmin ? undefined : "org-example-com";
-  const subscribedAgents: AgentType[] | undefined = isAdmin
-    ? undefined
-    : getSubscribedAgents(orgId) ?? ["restaurant", "loan"];
+  const isAdmin = isPlatformAdminEmail(normalized);
+
+  if (isAdmin) {
+    return {
+      token: "demo-token",
+      user: {
+        email: normalized,
+        name: displayNameFromEmail(normalized),
+        role: "platform_admin",
+        orgId: undefined,
+        subscribedAgents: undefined,
+        orgStatus: undefined,
+      },
+      expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+    };
+  }
+
+  const memberships = getMembershipOrgIds(normalized);
+  if (memberships.length === 0) {
+    throw new Error(
+      "No workspace assigned to this account. Contact your admin or Heuristic Labs sales.",
+    );
+  }
+
+  // Single tenant → bind immediately. Multi → wait for picker (empty agents until switch).
+  const orgId = resolvePrimaryOrgId(normalized);
+  const subscribedAgents: AgentType[] = orgId ? agentsForOrg(orgId) : [];
 
   return {
     token: "demo-token",
     user: {
       email: normalized,
-      name: normalized
-        .split("@")[0]
-        .replace(/[._]/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase()),
-      role,
+      name: displayNameFromEmail(normalized),
+      role: "customer_admin",
       orgId,
       subscribedAgents,
-      orgStatus: isAdmin ? undefined : "active",
+      orgStatus: "active",
     },
     expiresAt: Date.now() + 8 * 60 * 60 * 1000,
   };
+}
+
+function displayNameFromEmail(email: string): string {
+  return email
+    .split("@")[0]
+    .replace(/[._]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 async function buildSession(user: User): Promise<AuthSession> {
@@ -307,10 +345,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await sendPasswordResetEmail(firebaseAuth!, email);
   }, [demoMode]);
 
+  const switchTenant = useCallback((orgId: string) => {
+    setSession((prev) => {
+      if (!prev) return prev;
+      if (!canAccessTenant(prev.user.email, orgId)) {
+        safeLog.warn("Blocked tenant switch — org not in user memberships", {
+          email: prev.user.email,
+          orgId,
+        });
+        return prev;
+      }
+      const subscribedAgents = agentsForOrg(orgId);
+      const next: AuthSession = {
+        ...prev,
+        user: {
+          ...prev.user,
+          orgId,
+          subscribedAgents,
+          orgStatus: prev.user.orgStatus ?? "active",
+        },
+      };
+      setCachedSession(next);
+      if (demoMode) {
+        try {
+          localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(next));
+        } catch {
+          // ignore quota / private-mode failures
+        }
+      }
+      return next;
+    });
+  }, [demoMode]);
+
   const logout = useCallback(() => {
     void (async () => {
       if (demoMode) {
         localStorage.removeItem(DEMO_SESSION_KEY);
+        try {
+          sessionStorage.removeItem("voicera_need_tenant");
+          sessionStorage.removeItem("voicera_active_tenant");
+          sessionStorage.removeItem("voicera_active_tenant_name");
+          sessionStorage.removeItem("vocera_selected_agent");
+        } catch {
+          // ignore
+        }
         setCachedSession(null);
         setSession(null);
         return;
@@ -330,9 +408,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, [demoMode]);
 
+  const userTenants = useMemo(() => {
+    if (!session?.user.email || session.user.role === "platform_admin") return [];
+    return listUserTenants(session.user.email);
+  }, [session?.user.email, session?.user.role]);
+
   return (
     <AuthContext.Provider
-      value={{ session, loading, demoMode, login, completeMfaLogin, loginWithGoogle, resetPassword, logout }}
+      value={{
+        session,
+        loading,
+        demoMode,
+        userTenants,
+        login,
+        completeMfaLogin,
+        loginWithGoogle,
+        resetPassword,
+        switchTenant,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

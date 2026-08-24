@@ -23,7 +23,7 @@ export const AGENT_TYPES: { id: AgentType; label: string; category: string; icon
 
 export const AGENTS: { id: AgentType; label: string }[] = [
   { id: "restaurant", label: "Restaurant Ordering" },
-  { id: "loan",       label: "AI Feedback" },
+  { id: "loan",       label: "Loan Collection" },
 ];
 
 // ── Rich mock stats for the two pre-seeded demo agents ────────────────────────
@@ -42,7 +42,7 @@ const SEEDED_AGENT_DEFS: Record<string, Omit<AgentDefinition, "id" | "type" | "c
     createdAt: "Jun 1, 2026",
   },
   loan: {
-    name: "AI Feedback",
+    name: "Loan Collection",
     status: "active",
     stats: { callsToday: 21, resolutionRate: 78, avgDuration: "06:10" },
     tone: "Professional & Empathetic",

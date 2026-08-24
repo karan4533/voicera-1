@@ -147,9 +147,9 @@ export function hasPermission(role: UserRole, permission: Permission): boolean {
  * Platform Admin console get their subscriptions from Firestore instead.
  */
 const DEMO_ORG_SUBSCRIPTIONS: Record<string, AgentType[]> = {
-  "org-example-com":       ["restaurant", "loan"],
+  "org-example-com":       ["restaurant"],
   "org-restaurant-co-in":  ["restaurant"],
-  "org-finance-corp-com":  ["loan", "banking"],
+  "org-finance-corp-com":  ["loan"],
   "org-healthcare-in":     ["healthcare"],
   "org-realty-io":         ["real-estate"],
   "org-shopnow-com":       ["shop", "customer-support"],

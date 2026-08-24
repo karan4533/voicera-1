@@ -3,9 +3,15 @@ import { Eye, EyeOff, Shield, Mail } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { MultiFactorResolver } from "firebase/auth";
 import { useAuth, isMfaRequiredError } from "../context/AuthContext";
+import { getSession } from "../lib/auth";
 import { getFriendlyAuthErrorMessage } from "../lib/authErrors";
 import { isValidEmail } from "../lib/validate";
 import { allowAttempt } from "../lib/rateLimit";
+import {
+  isPlatformAdminEmail,
+  listUserTenants,
+  DEMO_LOGIN_ACCOUNTS,
+} from "../lib/tenantMemberships";
 import heuristicLabsLogo from "../../assets/heuristic-labs-logo.png";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
@@ -27,7 +33,7 @@ const BORDER   = "#D6CFC4";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
-  const { login, completeMfaLogin, resetPassword, loginWithGoogle, session, demoMode } = useAuth();
+  const { login, completeMfaLogin, resetPassword, loginWithGoogle, demoMode } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<"login" | "forgot" | "forgot-success" | "mfa">("login");
@@ -45,10 +51,26 @@ export function LoginScreen() {
     else localStorage.removeItem("remembered_email");
   };
 
-  const finishLogin = (role?: string) => {
-    const multi = demoMode || localStorage.getItem("voicera_multi_tenant") === "1";
-    if (multi && role !== "platform_admin") {
+  /** After auth: picker only for multi-tenant memberships; single-tenant auto-enters. */
+  const finishLogin = (emailAddr: string, role?: string) => {
+    const normalized = emailAddr.trim().toLowerCase();
+    sessionStorage.removeItem("vocera_selected_agent");
+
+    if (role === "platform_admin" || isPlatformAdminEmail(normalized)) {
+      sessionStorage.removeItem("voicera_need_tenant");
+      navigate("/admin", { replace: true });
+      return;
+    }
+
+    const tenants = listUserTenants(normalized);
+    if (tenants.length > 1) {
       sessionStorage.setItem("voicera_need_tenant", "1");
+    } else if (tenants.length === 1) {
+      sessionStorage.removeItem("voicera_need_tenant");
+      sessionStorage.setItem("voicera_active_tenant", tenants[0].id);
+      sessionStorage.setItem("voicera_active_tenant_name", tenants[0].name);
+    } else {
+      sessionStorage.removeItem("voicera_need_tenant");
     }
     navigate(roleHome(role), { replace: true });
   };
@@ -68,11 +90,8 @@ export function LoginScreen() {
     try {
       await login(trimmed, password, rememberMe);
       rememberEmail(trimmed);
-      // session may not be updated yet in same tick — use email-based role hint
-      const roleHint = trimmed.includes("admin@") || trimmed.includes("platform@")
-        ? "platform_admin"
-        : "customer_admin";
-      finishLogin(session?.user.role ?? roleHint);
+      const s = getSession();
+      finishLogin(s?.user.email ?? trimmed, s?.user.role);
     } catch (err) {
       if (isMfaRequiredError(err)) {
         setMfaResolver(err.resolver);
@@ -92,7 +111,8 @@ export function LoginScreen() {
     setLoading(true);
     try {
       await loginWithGoogle();
-      finishLogin(session?.user.role ?? "customer_admin");
+      const s = getSession();
+      finishLogin(s?.user.email ?? "demo.sso@spicegarden.com", s?.user.role);
     } catch (err) {
       setError(getFriendlyAuthErrorMessage(err));
     } finally {
@@ -113,7 +133,8 @@ export function LoginScreen() {
     try {
       await completeMfaLogin(mfaResolver, mfaCode);
       rememberEmail(email.trim().toLowerCase());
-      navigate(roleHome(session?.user.role), { replace: true });
+      const s = getSession();
+      finishLogin(s?.user.email ?? email.trim().toLowerCase(), s?.user.role);
     } catch (err) {
       setError(getFriendlyAuthErrorMessage(err));
     } finally {
@@ -213,9 +234,14 @@ export function LoginScreen() {
 
           {demoMode && mode === "login" && (
             <div style={{ backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400E", marginBottom: 18, lineHeight: 1.45 }}>
-              <strong>Local demo mode</strong> — Firebase is not configured.
-              Sign in with any email + password (e.g. <code>demo@spicegarden.com</code>).
-              Use <code>admin@voicera.ai</code> for platform admin.
+              <strong>Local demo mode</strong> — Firebase is not configured. Use a provisioned demo account (any password):
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                {DEMO_LOGIN_ACCOUNTS.map((a) => (
+                  <li key={a.email} style={{ marginBottom: 4 }}>
+                    <code>{a.email}</code> — {a.unlocks}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -292,7 +318,7 @@ export function LoginScreen() {
               </h2>
               <p style={{ margin: "0 0 28px", fontSize: 13, color: MUTED }}>
                 {mode === "login"
-                  ? "Use email and password, or continue with Google SSO. Your tenant is resolved from your account."
+                  ? "Use your company account. Access is limited to your organization’s purchased agents."
                   : "We'll send a recovery link to your email"}
               </p>
 
@@ -399,8 +425,8 @@ export function LoginScreen() {
                       Sign in with Google SSO
                     </button>
                     <p style={{ margin: 0, fontSize: 11, color: MUTED, textAlign: "center", lineHeight: 1.4 }}>
-                      Google SSO uses your Google Workspace / Google account.
-                      After SSO, if you belong to multiple tenants you will pick a workspace.
+                      No public registration. Accounts are provisioned after purchase.
+                      If you belong to multiple tenants, you will pick a workspace after sign-in.
                     </p>
                   </>
                 )}
@@ -410,9 +436,17 @@ export function LoginScreen() {
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 24 }}>
-          <Shield size={12} style={{ color: "#9E9890" }} />
-          <span style={{ fontSize: 12, color: "#9E9890" }}>Secured by Firebase Authentication</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 24 }}>
+          <p style={{ margin: 0, fontSize: 12, color: MUTED, textAlign: "center" }}>
+            Need access?{" "}
+            <a href="mailto:sales@heuristiclabs.ai" style={{ color: ACCENT, fontWeight: 600, textDecoration: "none" }}>
+              Contact your admin or Heuristic Labs sales
+            </a>
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Shield size={12} style={{ color: "#9E9890" }} />
+            <span style={{ fontSize: 12, color: "#9E9890" }}>Secured by Firebase Authentication</span>
+          </div>
         </div>
       </div>
     </div>

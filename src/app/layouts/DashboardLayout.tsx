@@ -5,10 +5,12 @@ import {
   Megaphone, Users, Menu, X, LogOut, HelpCircle, Building2, CreditCard,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useAgent } from "../context/AgentContext";
 import { AgentSwitcher } from "../components/AgentSwitcher";
 import { NotificationBell } from "../components/NotificationBell";
 import { CORE_SETUP_NAV, OPERATIONS_NAV, TENANT_ADMIN_NAV } from "../lib/workflow";
 import { getSystemHealth } from "../lib/api";
+import type { AgentType } from "../lib/types";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
 
 const ICON_BY_ID: Record<string, typeof Phone> = {
@@ -58,32 +60,62 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 // ── Layout ─────────────────────────────────────────────────────────────────────
 
 export function DashboardLayout() {
-  const { session, logout } = useAuth();
+  const { session, logout, switchTenant, userTenants } = useAuth();
+  const { setAgent } = useAgent();
   const navigate = useNavigate();
   const [health, setHealth] = useState({ status: "healthy", activeCalls: 0, avgLatency: 420 });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
-  const [tenantPicker, setTenantPicker] = useState(
-    () => sessionStorage.getItem("voicera_need_tenant") === "1",
-  );
+  const [tenantPicker, setTenantPicker] = useState(false);
   const [tenantName, setTenantName] = useState(
     () => sessionStorage.getItem("voicera_active_tenant_name") || "",
   );
 
   const isAdmin = session?.user.role === "customer_admin";
+  const noWorkspace =
+    !!session &&
+    session.user.role !== "platform_admin" &&
+    userTenants.length === 0;
 
-  const DEMO_TENANTS = [
-    { id: "org-example-com", name: "Spice Garden Restaurants", detail: "Restaurant Ordering agents" },
-    { id: "org-finance-corp-com", name: "Swift Finance Corp", detail: "Loan / EMI follow-up agents" },
-  ];
-
-  const pickTenant = (id: string, name: string) => {
+  const pickTenant = useCallback((id: string, name: string, primaryAgent: AgentType) => {
+    sessionStorage.removeItem("vocera_selected_agent");
     sessionStorage.setItem("voicera_active_tenant", id);
     sessionStorage.setItem("voicera_active_tenant_name", name);
     sessionStorage.removeItem("voicera_need_tenant");
+    switchTenant(id);
+    setAgent(primaryAgent);
     setTenantName(name);
     setTenantPicker(false);
-  };
+    navigate("/dashboard", { replace: true });
+  }, [navigate, setAgent, switchTenant]);
+
+  // Tenant gate: multi → picker; single → auto-enter; never list orgs the user doesn't own
+  useEffect(() => {
+    if (!session || session.user.role === "platform_admin") {
+      setTenantPicker(false);
+      return;
+    }
+
+    if (userTenants.length > 1 && !session.user.orgId) {
+      setTenantPicker(true);
+      return;
+    }
+
+    setTenantPicker(false);
+    sessionStorage.removeItem("voicera_need_tenant");
+
+    if (userTenants.length === 1) {
+      const t = userTenants[0];
+      setTenantName(t.name);
+      sessionStorage.setItem("voicera_active_tenant", t.id);
+      sessionStorage.setItem("voicera_active_tenant_name", t.name);
+      if (session.user.orgId !== t.id) {
+        sessionStorage.removeItem("vocera_selected_agent");
+        switchTenant(t.id);
+      }
+      setAgent(t.primaryAgent);
+    }
+  }, [session, userTenants, switchTenant, setAgent]);
 
   const filterAdmin = <T extends { adminOnly?: boolean }>(items: readonly T[]) =>
     items.filter((item) => isAdmin || !item.adminOnly);
@@ -283,12 +315,29 @@ export function DashboardLayout() {
         </header>
 
         <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-7">
-          <Outlet />
+          {noWorkspace ? (
+            <div className="mx-auto mt-16 max-w-md rounded-xl border border-[#E2DDD5] bg-white p-8 text-center shadow-sm">
+              <Building2 size={36} className="mx-auto mb-4 text-[#9E9890]" />
+              <h2 className="m-0 mb-2 text-lg font-bold text-[#1E1A14]">No workspace assigned</h2>
+              <p className="m-0 mb-6 text-[13px] text-[#7A746C] leading-relaxed">
+                This account is not provisioned to a purchased Voicera tenant.
+                Contact your admin or Heuristic Labs sales to get access.
+              </p>
+              <a
+                href="mailto:sales@heuristiclabs.ai"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-[#50381F] px-4 text-[13px] font-semibold text-white no-underline"
+              >
+                Contact sales
+              </a>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
 
-      {/* Post-login multi-tenant switcher — blocking until a workspace is chosen */}
-      {tenantPicker && (
+      {/* Post-login multi-tenant switcher — only when user belongs to 2+ orgs */}
+      {tenantPicker && userTenants.length > 1 && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/50">
           <div className="w-[440px] max-w-[92vw] rounded-xl bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-label="Choose tenant workspace">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-[#b5763a]">Workspace</div>
@@ -302,11 +351,11 @@ export function DashboardLayout() {
               Signed in as <span className="font-mono text-[#50381F]">{session?.user.email}</span>
             </p>
             <div className="flex flex-col gap-2">
-              {DEMO_TENANTS.map((t) => (
+              {userTenants.map((t) => (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => pickTenant(t.id, t.name)}
+                  onClick={() => pickTenant(t.id, t.name, t.primaryAgent)}
                   className="text-left rounded-lg border border-[#E2DDD5] bg-white px-4 py-3 cursor-pointer hover:border-[#C9B99E] hover:bg-[#F7F4EF]"
                 >
                   <div className="text-[14px] font-semibold text-[#1E1A14]">{t.name}</div>
