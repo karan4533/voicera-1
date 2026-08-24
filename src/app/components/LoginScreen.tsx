@@ -10,7 +10,6 @@ import { allowAttempt } from "../lib/rateLimit";
 import {
   isPlatformAdminEmail,
   listUserTenants,
-  DEMO_LOGIN_ACCOUNTS,
 } from "../lib/tenantMemberships";
 import heuristicLabsLogo from "../../assets/heuristic-labs-logo.png";
 import heuristicLabsLogoLight from "../../assets/heuristic-labs-logo-light.png";
@@ -33,7 +32,7 @@ const BORDER   = "#D6CFC4";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function LoginScreen() {
-  const { login, completeMfaLogin, resetPassword, loginWithGoogle, demoMode } = useAuth();
+  const { login, completeMfaLogin, resetPassword, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<"login" | "forgot" | "forgot-success" | "mfa">("login");
@@ -231,19 +230,6 @@ export function LoginScreen() {
 
         {/* Form card */}
         <div style={{ width: "100%", maxWidth: 400, backgroundColor: SURFACE, borderRadius: 16, border: `1px solid ${BORDER}`, padding: "36px 36px", boxShadow: "0 4px 24px rgba(80,56,31,0.08)" }}>
-
-          {demoMode && mode === "login" && (
-            <div style={{ backgroundColor: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400E", marginBottom: 18, lineHeight: 1.45 }}>
-              <strong>Local demo mode</strong> — Firebase is not configured. Use a provisioned demo account (any password):
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                {DEMO_LOGIN_ACCOUNTS.map((a) => (
-                  <li key={a.email} style={{ marginBottom: 4 }}>
-                    <code>{a.email}</code> — {a.unlocks}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {mode === "mfa" ? (
             <>
