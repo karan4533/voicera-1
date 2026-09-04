@@ -362,7 +362,8 @@ export function CallRemindersPage() {
           {loading ? (
             <div className="flex items-center justify-center h-48 text-[13px] text-[#9E9890]">Loading scheduled calls…</div>
           ) : (
-            <table className="w-full border-collapse text-[13px]">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] border-collapse text-[13px]">
               <thead className="sticky top-0 bg-[#FDFDFD] z-10">
                 <tr className="border-b border-[#E2DDD5]">
                   {["Customer Name", "Phone Number", "Location", "Tags", "Status", "Scheduled", "Actions"].map((h) => (
@@ -457,6 +458,7 @@ export function CallRemindersPage() {
                 )}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

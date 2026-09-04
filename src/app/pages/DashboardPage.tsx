@@ -237,7 +237,7 @@ export function DashboardPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+            <table className="w-full min-w-[700px] border-collapse">
             <thead>
               <tr className="bg-[#F7F4EF] border-b border-[#E2DDD5]">
                 {["Timestamp", "Agent", "Contact", "Outcome", "Status", "Transcript"].map((h) => (

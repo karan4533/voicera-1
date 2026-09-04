@@ -291,9 +291,12 @@ export function DashboardLayout() {
               >
                 <Menu size={18} color="#7A746C" />
               </button>
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="text-[12px] font-medium text-[#9E9890]">Active agent:</span>
-                <AgentSwitcher />
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="hidden sm:inline text-[12px] font-medium text-[#9E9890] shrink-0">Active agent:</span>
+                <span className="sm:hidden text-[11px] font-medium text-[#9E9890] shrink-0">Agent:</span>
+                <div className="min-w-0 truncate">
+                  <AgentSwitcher />
+                </div>
               </div>
             </div>
 

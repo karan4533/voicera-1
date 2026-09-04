@@ -220,16 +220,35 @@ export function LoginScreen() {
       </div>
 
       {/* ── Right Panel ─────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: BG, padding: "48px 24px" }}>
+      <div
+        className="flex flex-1 flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12"
+        style={{ backgroundColor: BG }}
+      >
 
         {/* Mobile branding */}
-        <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
-          <img src={heuristicLabsLogo} alt="Heuristic Labs" style={{ width: 56, height: 56, objectFit: "contain" }} />
-          <h1 style={{ margin: 0, fontSize: 44, fontWeight: 800, color: TEXT, letterSpacing: "-0.03em" }}>Voicera</h1>
+        <div className="lg:hidden flex flex-col items-center gap-2 mb-6 sm:mb-10">
+          <img
+            src={heuristicLabsLogo}
+            alt="Heuristic Labs"
+            className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
+          />
+          <h1
+            className="m-0 text-[36px] sm:text-[44px] font-extrabold tracking-tight"
+            style={{ color: TEXT }}
+          >
+            Voicera
+          </h1>
         </div>
 
         {/* Form card */}
-        <div style={{ width: "100%", maxWidth: 400, backgroundColor: SURFACE, borderRadius: 16, border: `1px solid ${BORDER}`, padding: "36px 36px", boxShadow: "0 4px 24px rgba(80,56,31,0.08)" }}>
+        <div
+          className="w-full max-w-[400px] rounded-2xl border p-5 sm:p-9"
+          style={{
+            backgroundColor: SURFACE,
+            borderColor: BORDER,
+            boxShadow: "0 4px 24px rgba(80,56,31,0.08)",
+          }}
+        >
 
           {mode === "mfa" ? (
             <>

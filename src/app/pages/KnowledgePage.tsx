@@ -143,7 +143,8 @@ export function KnowledgePage() {
             <p className="m-0 mt-1 text-[12px]">Upload PDF, DOCX, TXT, CSV, or XLSX to start indexing</p>
           </div>
         ) : (
-          <table className="w-full border-collapse text-[13px]">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-[13px]">
             <thead className="bg-[#F7F4EF]">
               <tr className="border-b border-[#E2DDD5]">
                 <th className="text-left text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-5 py-3">File</th>
@@ -196,6 +197,7 @@ export function KnowledgePage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

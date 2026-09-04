@@ -92,7 +92,7 @@ export function AgentsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0">
-          <div className="relative flex-1 min-w-[240px] max-w-sm">
+          <div className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9E9890]" />
             <input
               type="text"
@@ -105,7 +105,8 @@ export function AgentsPage() {
         </div>
 
         <div className="flex-1 overflow-auto rounded-xl border border-[#E2DDD5] bg-white shadow-sm">
-          <table className="w-full border-collapse text-[13px]">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-[13px]">
             <thead className="sticky top-0 bg-[#F7F4EF] z-10">
               <tr className="border-b border-[#E2DDD5]">
                 <th className="text-left text-[11px] font-bold text-[#7A746C] uppercase tracking-wider px-5 py-3">Agent</th>
@@ -199,6 +200,7 @@ export function AgentsPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
